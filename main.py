@@ -219,4 +219,17 @@ def handle_group_game(call):
 
 # Запуск
 print("Бот запущен и готов к работе в ЛС и Группах!")
+# Показ характеристики игрока по команде /mycard
+@bot.message_handler(commands=['mycard'])
+def show_my_card(message):
+    user_id = message.from_user.id
+    if user_id in players:
+        card = players[user_id]['card']
+        text = "🪪 **Твоя карточка:**\n\n"
+        for key, value in card.items():
+            text += f"🔹 **{key}:** {value}\n"
+        bot.send_message(user_id, text, parse_mode="Markdown")
+    else:
+        bot.send_message(user_id, "Ты не в игре!")
+
 bot.polling(none_stop=True)
