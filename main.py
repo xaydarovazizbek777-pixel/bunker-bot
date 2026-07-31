@@ -233,6 +233,3 @@ def handle_text(message):
             bot.send_message(message.chat.id, card_text, parse_mode="Markdown")
         else:
             bot.send_message(message.chat.id, t['room_not_found'])
-
-print("Бот работает!")
-bot.polling(none_stop=True)
