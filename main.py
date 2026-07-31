@@ -3,13 +3,25 @@ import time
 import random
 import string
 import threading
+from flask import Flask
 import telebot
 from telebot import types
 
 TOKEN = "8963766433:AAFX8f3AW0IuHq_BDBVPhgU4U3wcMAhjGPA"
 bot = telebot.TeleBot(TOKEN)
 
-# Твоя ссылка на официальный канал обновлений
+# --- ВЕБ-СЕРВЕР ДЛЯ RENDER ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+
+# Ссылка на твой официальный канал обновлений
 CHANNEL_URL = "https://t.me/bunker_game_official"
 
 # --- БАЗА ДАННЫХ ИГРОКОВ И ИГР ---
@@ -45,6 +57,14 @@ TEXTS = {
             "📢 **Следи за новостями и обновлениями в нашем канале!**\n"
             "🎮 Создавай комнаты, делись кодом с друзьями и играйте вместе!"
         ),
+        "rules": (
+            "📖 **Правила игры «Бункер»:**\n\n"
+            "1️⃣ На Земле произошла катастрофа. Спастись можно только в Бункере.\n"
+            "2️⃣ Количество мест ограничено! Игроки получают случайные карточки персонажей (профессия, здоровье, инвентарь и фишки).\n"
+            "3️⃣ В каждом раунде вы обсуждаете, кто полезнее для восстановления цивилизации.\n"
+            "4️⃣ В конце раунда проходит голосование. Игрок с наибольшим количеством голосов **выбывает**.\n"
+            "5️⃣ Побеждают те, кто останется в бункере до конца!"
+        ),
         "add_to_chat": "➕ Добавить в группу 👥",
         "channel_btn": "📢 Канал обновлений",
         "create_game": "🎮 Создать игру",
@@ -59,6 +79,14 @@ TEXTS = {
             "📢 **Yangiliklar va yangilanishlarni kanalimizda kuzatib boring!**\n"
             "🎮 Xonalar yarating, do'stlaringizga kodni yuboring va birgalikda o'ynang!"
         ),
+        "rules": (
+            "📖 **«Bunker» o'yini qoidalari:**\n\n"
+            "1️⃣ YERda felokat yuz berdi. Faqat Bunkerdagina saqlanib qolish mumkin.\n"
+            "2️⃣ Joylar cheklangan! O'yinchilarga tasodifiy qahramon kartalari beriladi.\n"
+            "3️⃣ Har bir raundda kim jamiyat uchun foydaliroq ekanini muhokama qilasiz.\n"
+            "4️⃣ Raund oxirida ovoz berish bo'lib o'tadi. Eng ko'p ovoz toplagan o'yinchi **chiqib ketadi**.\n"
+            "5️⃣ Oxirigacha bunkerda qolganlar g'olib bo'lishadi!"
+        ),
         "add_to_chat": "➕ Guruhga qo'shish 👥",
         "channel_btn": "📢 Yangiliklar kanali",
         "create_game": "🎮 O'yin yaratish",
@@ -72,6 +100,14 @@ TEXTS = {
             "Survive, prove your importance, and eliminate weak players!\n\n"
             "📢 **Follow news and updates in our official channel!**\n"
             "🎮 Create rooms, share the code with friends, and play together!"
+        ),
+        "rules": (
+            "📖 **«Bunker» Game Rules:**\n\n"
+            "1️⃣ A catastrophe happened on Earth. Only the Bunker can save you.\n"
+            "2️⃣ Seats are limited! Players receive random character cards.\n"
+            "3️⃣ Each round, discuss who is most useful to rebuild civilization.\n"
+            "4️⃣ Voting happens at the end of each round. The most voted player gets **eliminated**.\n"
+            "5️⃣ Those who survive until the end win!"
         ),
         "add_to_chat": "➕ Add to Group 👥",
         "channel_btn": "📢 Updates Channel",
@@ -100,7 +136,7 @@ def generate_random_card():
         "ability": random.choice(ABILITIES)
     }
 
-# --- СТАРТ И ВЫБОР ЯЗЫКА ---
+# --- СЛЭШ-КОМАНДЫ (COMMANDS) ---
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
     markup = types.InlineKeyboardMarkup()
@@ -110,6 +146,24 @@ def cmd_start(message):
         types.InlineKeyboardButton("🇬🇧 English", callback_data="set_lang_en")
     )
     bot.send_message(message.chat.id, "🌐 Выберите язык / Tilni tanlang / Choose language:", reply_markup=markup)
+
+@bot.message_handler(commands=['rules'])
+def cmd_rules(message):
+    info = get_user_info(message.from_user.id)
+    lang = info["lang"]
+    bot.send_message(message.chat.id, TEXTS[lang]["rules"], parse_mode="Markdown")
+
+@bot.message_handler(commands=['create'])
+def cmd_create_slash(message):
+    cmd_create_game(message)
+
+@bot.message_handler(commands=['profile'])
+def cmd_profile_slash(message):
+    cmd_profile(message)
+
+@bot.message_handler(commands=['shop'])
+def cmd_shop_slash(message):
+    cmd_shop(message)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("set_lang_"))
 def cb_lang(call):
@@ -402,5 +456,8 @@ def process_payment(message):
     bot.send_message(message.chat.id, "🎉 **Поздравляем! Вы успешно купили VIP за 20 Stars!** 👑\nВам также начислено 500 монет!")
 
 if __name__ == "__main__":
-    print("Бот обновлен и запущен!")
+    # Запускаем Flask в отдельном потоке
+    threading.Thread(target=run_flask, daemon=True).start()
+    
+    print("Бот и веб-сервер успешно запущены!")
     bot.infinity_polling()
