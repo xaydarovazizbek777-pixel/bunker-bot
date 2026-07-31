@@ -19,7 +19,7 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 # --- 2. Инициализация Бота ---
-TOKEN = os.environ.get("BOT_TOKEN", "8963766433:AAFX8f3AW0IuHq_BDBVPhgU482gB2fJ1N4o")
+TOKEN = os.environ.get("BOT_TOKEN", "8963766433:AAFX8f3AW0IuHq_BDBVPhgU43wcMAhjgPA")
 bot = telebot.TeleBot(TOKEN)
 
 # Хранилища
