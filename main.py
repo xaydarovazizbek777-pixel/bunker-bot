@@ -16,10 +16,10 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-threading.Thread(target=run_flask).start()
+threading.Thread(target=run_flask, daemon=True).start()
 
 # --- 2. Инициализация Бота ---
-TOKEN = "8963766433:AAFX8f3AW0IuHq_BDBVPhgU482gB2fJ1N4o"
+TOKEN = os.environ.get("BOT_TOKEN", "8963766433:AAFX8f3AW0IuHq_BDBVPhgU482gB2fJ1N4o")
 bot = telebot.TeleBot(TOKEN)
 
 # Хранилища
@@ -82,14 +82,14 @@ TEXTS = {
     }
 }
 
-# --- 4. Расширенная генерация карт ---
+# --- 4. Генерация карт выживших ---
 def generate_survivor_card(lang='ru'):
     if lang == 'uz':
         professions = ["Shifokor", "Muhandis", "Oshpaz", "Militsiya", "O'qituvchi", "Dasturchi", "Elektrik", "Quruvchi", "Biolog", "Fermer"]
-        health_status = ["Mutlaqo sog'lom", "Astma", "Yengil uzoqni ko me'yor", "Changga allergiya", "Uyqusizlik", "Qandli diabet"]
+        health_status = ["Mutlaqo sog'lom", "Astma", "Yengil uzoqni ko'ra olmaslik", "Changga allergiya", "Uyqusizlik", "Qandli diabet"]
         hobbies = ["Ovchilik", "Pazandalik", "Texnika ta'mirlash", "O'rmonda omon qolish", "Shaxmat", "Yugurish", "Kitob o'qish"]
-        inventories = ["Dori-darmon qutisi", "Ov miltig'i", "Fonaik va batareyalar", "Suv filtri", "Urug'lar toplami", "Konserva qush qutisi"]
-        phobias = ["Qorong'ulikdan qo'rqish", "Klaustrofobiya (tor joy)", "Paranoi baseline", "Optimist", "Agressiv"]
+        inventories = ["Dori-darmon qutisi", "Ov miltig'i", "Fonarik va batareyalar", "Suv filtri", "Urug'lar to'plami", "Konserva qutisi"]
+        phobias = ["Qorong'ulikdan qo'rqish", "Klaustrofobiya", "Paranoia", "Optimist", "Agressiv"]
         specials = ["Istalgan o'yinchini chiqarib yuborish", "Sog'likni boshqasi bilan almashtirish", "Ovoz berishni bekor qilish"]
         genders = ["Erkak", "Ayol"]
         repro = ["Beshik tebrata oladi", "Beshik tebrata olmaydi"]
@@ -140,7 +140,7 @@ def get_main_keyboard(lang='ru'):
     markup.add(btn5, btn6)
     return markup
 
-# --- 6. Обработчики ---
+# --- 6. Обработчики событий ---
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -156,7 +156,11 @@ def set_language(call):
     user_languages[call.message.chat.id] = lang
     t = TEXTS[lang]
     
-    bot.delete_message(call.message.chat.id, call.message.message_id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except:
+        pass
+        
     bot.send_message(
         call.message.chat.id,
         t['start_menu'],
@@ -233,3 +237,7 @@ def handle_text(message):
             bot.send_message(message.chat.id, card_text, parse_mode="Markdown")
         else:
             bot.send_message(message.chat.id, t['room_not_found'])
+
+# --- 7. Запуск бота ---
+print("Бот успешно запущен!")
+bot.infinity_polling(timeout=10, long_polling_timeout=5)
