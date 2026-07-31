@@ -427,24 +427,24 @@ def cb_start_game(call):
 
     start_new_round(code)
 
-# --- КАРТОЧКА И СПОСОБНОСТИ В ЛС ---
+# --- КАРТОЧКА И СПОСОБНОСТИ В ЛС (БЕЗОПАСНЫЙ СИНТАКСИС) ---
 def send_player_card_private(user_id, card):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🔄 Пересдать карту (100 🪙)", callback_data="reroll_private"))
-    markup.add(types.InlineKeyboardButton(f"⚡ Активировать: {card['ability']['name']}", callback_data="use_ability_private"))
+    markup.add(types.InlineKeyboardButton("⚡ Активировать: " + card['ability']['name'], callback_data="use_ability_private"))
     
     card_text = (
         "📋 **Твоя карточка выжившего:**\n\n"
-        f"👤 Возраст и Пол:\n"
-        f"💼 Профессия:\n"
-        f"🏥 Здоровье:\n"
-        f"🎨 Хобби:\n"
-        f"👁 Фобия:\n"
-        f"🎒 Инвентарь:\n"
-        f"🧬 Фертильность:\n"
-        f"📌 Доп. факт:\n\n"
-        f"⚡ Фишка:['name']}\n"
-        f"_{card['ability']['desc']}_"
+        "👤 **Возраст и Пол:** " + card['gender_age'] + "\n"
+        "💼 **Профессия:** " + card['profession'] + "\n"
+        "🏥 **Здоровье:** " + card['health'] + "\n"
+        "🎨 **Хобби:** " + card['hobby'] + "\n"
+        "👁 **Фобия:** " + card['phobia'] + "\n"
+        "🎒 **Инвентарь:** " + card['inventory'] + "\n"
+        "🧬 **Фертильность:** " + card['fertility'] + "\n"
+        "📌 **Доп. факт:** " + card['fact'] + "\n\n"
+        "⚡ **Фишка:** " + card['ability']['name'] + "\n"
+        "_" + card['ability']['desc'] + "_"
     )
     bot.send_message(user_id, card_text, parse_mode="Markdown", reply_markup=markup)
 
@@ -579,7 +579,6 @@ def finish_voting(code):
         
     kicked_id = max(vote_counts, key=vote_counts.get) if vote_counts else None
     
-    # Проверка на иммунитет
     if kicked_id in game["active_immunities"]:
         bot.send_message(game["chat_id"], f"🛡 Игрок защищен **Иммунитетом**! Никто не вылетает в этом раунде.")
         game["active_immunities"].remove(kicked_id)
