@@ -229,7 +229,3 @@ def show_my_card(message):
         for key, value in card.items():
             text += f"🔹 **{key}:** {value}\n"
         bot.send_message(user_id, text, parse_mode="Markdown")
-    else:
-        bot.send_message(user_id, "Ты не в игре!")
-
-bot.polling(none_stop=True)
