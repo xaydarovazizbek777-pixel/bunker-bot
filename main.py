@@ -13,6 +13,7 @@ from telebot import types
 TOKEN = "8963766433:AAFX8f3AW0IuHq_BDBVPhgU4U3wcMAhjGPA"
 bot = telebot.TeleBot(TOKEN)
 BOT_USERNAME = "Bunker_live_bot"
+CHANNEL_URL = "https://t.me/bunker_game_official"
 
 # --- ID АДМИНИСТРАТОРОВ ---
 ADMIN_IDS = [5435444673]
@@ -43,7 +44,7 @@ def setup_bot_commands():
         bot.set_my_commands(commands)
         print("✅ Меню команд (/) успешно установлено!")
     except Exception as e:
-        print(f"⚠️ Ошибка установки меню команд: {e}")
+        print("⚠️ Ошибка установки меню команд: " + str(e))
 
 # --- ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ---
 def init_db():
@@ -206,7 +207,7 @@ def generate_random_card():
     gender = random.choice(["👨 Мужчина", "👩 Женщина"])
     age = random.randint(18, 65)
     return {
-        "gender_age": f"{gender}, {age} лет",
+        "gender_age": gender + ", " + str(age) + " лет",
         "profession": random.choice(PROFESSIONS),
         "health": random.choice(HEALTH_LIST),
         "hobby": random.choice(HOBBIES),
@@ -245,20 +246,28 @@ def show_main_menu(chat_id, user_id):
     lang = info["lang"] if info["lang"] in TEXTS else "ru"
     t = TEXTS[lang]
 
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add(types.KeyboardButton(t["create_game"]), types.KeyboardButton(t["join_game"]))
-    markup.add(types.KeyboardButton(t["profile"]), types.KeyboardButton(t["top"]))
-    markup.add(types.KeyboardButton(t["daily"]), types.KeyboardButton(t["shop"]))
-    markup.add(types.KeyboardButton(t["ref"]), types.KeyboardButton(t["lang"]))
+    # Reply Клавиатура (Основное меню)
+    reply_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    reply_markup.add(types.KeyboardButton(t["create_game"]), types.KeyboardButton(t["join_game"]))
+    reply_markup.add(types.KeyboardButton(t["profile"]), types.KeyboardButton(t["top"]))
+    reply_markup.add(types.KeyboardButton(t["daily"]), types.KeyboardButton(t["shop"]))
+    reply_markup.add(types.KeyboardButton(t["ref"]), types.KeyboardButton(t["lang"]))
     
-    bot.send_message(chat_id, t["welcome"], reply_markup=markup, parse_mode="Markdown")
+    # Inline Клавиатура (Добавить в группу + Канал)
+    inline_markup = types.InlineKeyboardMarkup()
+    add_group_url = "https://t.me/" + BOT_USERNAME + "?startgroup=true"
+    inline_markup.add(types.InlineKeyboardButton("➕ Добавить бота в группу", url=add_group_url))
+    inline_markup.add(types.InlineKeyboardButton("📢 Канал обновлений", url=CHANNEL_URL))
+
+    bot.send_message(chat_id, t["welcome"], reply_markup=reply_markup, parse_mode="Markdown")
+    bot.send_message(chat_id, "📌 **Быстрые ссылки:**", reply_markup=inline_markup, parse_mode="Markdown")
 
 # --- ВЫБОР ЯЗЫКА (ТОЛЬКО В ЛС) ---
 @bot.message_handler(commands=['lang'])
 @bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["lang"], TEXTS["uz"]["lang"], TEXTS["en"]["lang"]])
 def cmd_change_lang(message):
     if message.chat.type != 'private':
-        return  # Не показывает настройки языка в общих чатах!
+        return
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🇷🇺 Русский", callback_data="set_lang_ru"))
@@ -302,11 +311,15 @@ def cmd_profile(message):
     vip_status = "👑 VIP Игрок" if info["vip"] else "👤 Обычный игрок"
     winrate = round((info["won"] / info["played"] * 100), 1) if info["played"] > 0 else 0
     
-    bot.send_message(
-        message.chat.id,
-        f"👤 **Профиль выжившего:**\n\n🆔 ID: `{message.from_user.id}`\n✨ Статус: {vip_status}\n🪙 Монеты: **{info['coins']}**\n🏆 Рейтинг: **{info['rating']} РТС**\n\n📊 Игр: **{info['played']}** | Побед: **{info['won']}** ({winrate}%)",
-        parse_mode="Markdown"
+    text = (
+        "👤 **Профиль выжившего:**\n\n"
+        "🆔 ID: `" + str(message.from_user.id) + "`\n"
+        "✨ Статус: " + vip_status + "\n"
+        "🪙 Монеты: **" + str(info['coins']) + "**\n"
+        "🏆 Рейтинг: **" + str(info['rating']) + " РТС**\n\n"
+        "📊 Игр: **" + str(info['played']) + "** | Побед: **" + str(info['won']) + "** (" + str(winrate) + "%)"
     )
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
 @bot.message_handler(commands=['top'])
 @bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["top"], TEXTS["uz"]["top"], TEXTS["en"]["top"]])
@@ -319,7 +332,7 @@ def cmd_top_players(message):
 
     text = "🏆 **ТОП-10 ВЫЖИВШИХ:**\n\n"
     for idx, user in enumerate(top_users):
-        text += f"{idx+1}. **{user[0]}** — {user[1]} РТС | 🏆 {user[2]} побед\n"
+        text += str(idx+1) + ". **" + str(user[0]) + "** — " + str(user[1]) + " РТС | 🏆 " + str(user[2]) + " побед\n"
 
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
 
@@ -368,17 +381,19 @@ def handle_create_game(message):
     }
     user_to_game[user.id] = code
     
-    join_link = f"https://t.me/{BOT_USERNAME}?start=join_{code}"
+    join_link = "https://t.me/" + BOT_USERNAME + "?start=join_" + code
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("➕ Войти в игру", url=join_link))
-    markup.add(types.InlineKeyboardButton("🚀 Начать игру", callback_data=f"start_game_{code}"))
+    markup.add(types.InlineKeyboardButton("🚀 Начать игру", callback_data="start_game_" + code))
 
-    bot.send_message(
-        message.chat.id,
-        f"🎮 **ИГРА СОЗДАНА!**\n\n🔑 Код комнаты: `{code}`\n\n🌍 **Катастрофа:**\n{catastrophe}\n\n👥 **В лобби:** {user.first_name}\n\nНажмите кнопку ниже, чтобы войти!",
-        parse_mode="Markdown",
-        reply_markup=markup
+    msg = (
+        "🎮 **ИГРА СОЗДАНА!**\n\n"
+        "🔑 Код комнаты: `" + code + "`\n\n"
+        "🌍 **Катастрофа:**\n" + catastrophe + "\n\n"
+        "👥 **В лобби:** " + user.first_name + "\n\n"
+        "Нажмите кнопку ниже, чтобы войти!"
     )
+    bot.send_message(message.chat.id, msg, parse_mode="Markdown", reply_markup=markup)
 
 def join_game_by_code(message, code):
     user = message.from_user
@@ -396,10 +411,10 @@ def join_game_by_code(message, code):
     game["alive"].append(user)
     user_to_game[user.id] = code
     
-    bot.send_message(message.chat.id, f"✅ Вы вошли в игру `{code}`! Ожидайте старта.", parse_mode="Markdown")
+    bot.send_message(message.chat.id, "✅ Вы вошли в игру `" + code + "`! Ожидайте старта.", parse_mode="Markdown")
     
     players_list = ", ".join([p.first_name for p in game["players"]])
-    bot.send_message(game["chat_id"], f"🔔 **{user.first_name}** вошел в игру!\n👥 **Участники ({len(game['players'])}):** {players_list}")
+    bot.send_message(game["chat_id"], "🔔 **" + user.first_name + "** вошел в игру!\n👥 **Участники (" + str(len(game['players'])) + "):** " + players_list)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("start_game_"))
 def cb_start_game(call):
@@ -427,7 +442,7 @@ def cb_start_game(call):
 
     start_new_round(code)
 
-# --- КАРТОЧКА И СПОСОБНОСТИ В ЛС (БЕЗОПАСНЫЙ СИНТАКСИС) ---
+# --- КАРТОЧКА И СПОСОБНОСТИ В ЛС ---
 def send_player_card_private(user_id, card):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🔄 Пересдать карту (100 🪙)", callback_data="reroll_private"))
@@ -468,7 +483,7 @@ def cb_use_ability(call):
     if ability["id"] == "immunity":
         game["active_immunities"].append(user_id)
         bot.send_message(user_id, "🛡 **Иммунитет активирован!** Вы защищены от вылета в этом раунде.")
-        bot.send_message(game["chat_id"], f"🛡 Игрок **{call.from_user.first_name}** активировал **Иммунитет**!")
+        bot.send_message(game["chat_id"], "🛡 Игрок **" + call.from_user.first_name + "** активировал **Иммунитет**!")
     elif ability["id"] == "double_vote":
         game["double_votes"].append(user_id)
         bot.send_message(user_id, "✌️ **Двойной голос активирован!** Твой голос посчитается за 2.")
@@ -477,7 +492,7 @@ def cb_use_ability(call):
         if other_players:
             target = random.choice(other_players)
             target_card = game["cards"][target.id]
-            bot.send_message(user_id, f"🔍 **Шпионская сводка по {target.first_name}:**\n💼 Профессия: {target_card['profession']}\n🏥 Здоровье: {target_card['health']}")
+            bot.send_message(user_id, "🔍 **Шпионская сводка по " + target.first_name + ":**\n💼 Профессия: " + target_card['profession'] + "\n🏥 Здоровье: " + target_card['health'])
 
     bot.answer_callback_query(call.id, "Способность активирована!")
 
@@ -515,14 +530,14 @@ def start_new_round(code):
     game["votes"] = {}
     
     msg_text = (
-        f"🔄 **РАУНД {game['round']}**\n\n"
-        f"⚡ **Происшествие:**\n{event}\n\n"
-        f"👥 Выживших: **{len(game['alive'])}** | 🏛 Мест в бункере: **{game['bunker_capacity']}**\n\n"
-        f"⏳ **Обсуждайте, кто полезнее! (60 секунд)**"
+        "🔄 **РАУНД " + str(game['round']) + "**\n\n"
+        "⚡ **Происшествие:**\n" + event + "\n\n"
+        "👥 Выживших: **" + str(len(game['alive'])) + "** | 🏛 Мест в бункере: **" + str(game['bunker_capacity']) + "**\n\n"
+        "⏳ **Обсуждайте, кто полезнее! (60 секунд)**"
     )
     
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("🎴 Моя карта и фишки (в ЛС)", url=f"https://t.me/{BOT_USERNAME}"))
+    markup.add(types.InlineKeyboardButton("🎴 Моя карта и фишки (в ЛС)", url="https://t.me/" + BOT_USERNAME))
 
     bot.send_message(game["chat_id"], msg_text, parse_mode="Markdown", reply_markup=markup)
     threading.Thread(target=run_discussion_timer, args=(code, 60)).start()
@@ -539,7 +554,7 @@ def start_voting_phase(code):
         
     markup = types.InlineKeyboardMarkup()
     for player in game["alive"]:
-        markup.add(types.InlineKeyboardButton(f"❌ Исключить {player.first_name}", callback_data=f"vote_{code}_{player.id}"))
+        markup.add(types.InlineKeyboardButton("❌ Исключить " + player.first_name, callback_data="vote_" + code + "_" + str(player.id)))
     
     bot.send_message(game["chat_id"], "🗳 **Время вышло! Начинаем голосование!**\nВыберите, кого выгнать из бункера:", reply_markup=markup)
     threading.Thread(target=run_voting_timer, args=(code, 60)).start()
@@ -580,14 +595,14 @@ def finish_voting(code):
     kicked_id = max(vote_counts, key=vote_counts.get) if vote_counts else None
     
     if kicked_id in game["active_immunities"]:
-        bot.send_message(game["chat_id"], f"🛡 Игрок защищен **Иммунитетом**! Никто не вылетает в этом раунде.")
+        bot.send_message(game["chat_id"], "🛡 Игрок защищен **Иммунитетом**! Никто не вылетает в этом раунде.")
         game["active_immunities"].remove(kicked_id)
     elif kicked_id:
         kicked_player = next((pl for pl in game["alive"] if pl.id == kicked_id), None)
         if kicked_player:
             game["alive"].remove(kicked_player)
             update_user_stats(kicked_id, rating_add=-10)
-            bot.send_message(game["chat_id"], f"❌ **Результаты голосования:** Игрок **{kicked_player.first_name}** исключен из бункера!")
+            bot.send_message(game["chat_id"], "❌ **Результаты голосования:** Игрок **" + kicked_player.first_name + "** исключен из бункера!")
 
     del game["finished_vote"]
 
@@ -603,7 +618,7 @@ def finish_game(code):
     if not game:
         return
 
-    winners_list = "\n".join([f"🏆 {p.first_name}" for p in game["alive"]])
+    winners_list = "\n".join(["🏆 " + p.first_name for p in game["alive"]])
     
     for p in game["players"]:
         if p in game["alive"]:
@@ -611,7 +626,7 @@ def finish_game(code):
             
     bot.send_message(
         game["chat_id"],
-        f"🎉 **ИГРА ЗАВЕРШЕНА!** ☣️\n\nПобедители, попавшие в бункер:\n{winners_list}\n\n🏆 Победители получают **+100 монет** и **+25 РТС**!",
+        "🎉 **ИГРА ЗАВЕРШЕНА!** ☣️\n\nПобедители, попавшие в бункер:\n" + winners_list + "\n\n🏆 Победители получают **+100 монет** и **+25 РТС**!",
         parse_mode="Markdown"
     )
     del active_games[code]
@@ -620,11 +635,11 @@ def finish_game(code):
 @bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["shop"], TEXTS["uz"]["shop"], TEXTS["en"]["shop"], TEXTS["ru"]["ref"], TEXTS["uz"]["ref"], TEXTS["en"]["ref"]])
 def handle_shop_ref(message):
     if message.chat.type != 'private':
-        return  # Только в ЛС!
+        return
 
     if message.text in [TEXTS["ru"]["ref"], TEXTS["uz"]["ref"], TEXTS["en"]["ref"]]:
-        ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{message.from_user.id}"
-        bot.send_message(message.chat.id, f"🤝 **Реферальная программа**\n\nПриглашай друзей и получай **100 монет** 🪙!\n\n🔗 Твоя ссылка:\n`{ref_link}`", parse_mode="Markdown")
+        ref_link = "https://t.me/" + BOT_USERNAME + "?start=ref_" + str(message.from_user.id)
+        bot.send_message(message.chat.id, "🤝 **Реферальная программа**\n\nПриглашай друзей и получай **100 монет** 🪙!\n\n🔗 Твоя ссылка:\n`" + ref_link + "`", parse_mode="Markdown")
     else:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("⭐ Купить VIP за 20 Stars", callback_data="buy_vip_stars"))
