@@ -16,7 +16,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-threading.Thread(target=run_flask, daemon=True).start()
+threading.Thread(target=run_flask).start()
 
 # --- 2. Инициализация Бота ---
 TOKEN = os.environ.get("BOT_TOKEN", "8963766433:AAFX8f3AW0IuHq_BDBVPhgU43wcMAhjgPA")
@@ -82,14 +82,14 @@ TEXTS = {
     }
 }
 
-# --- 4. Генерация карт выживших ---
+# --- 4. Расширенная генерация карт ---
 def generate_survivor_card(lang='ru'):
     if lang == 'uz':
         professions = ["Shifokor", "Muhandis", "Oshpaz", "Militsiya", "O'qituvchi", "Dasturchi", "Elektrik", "Quruvchi", "Biolog", "Fermer"]
-        health_status = ["Mutlaqo sog'lom", "Astma", "Yengil uzoqni ko'ra olmaslik", "Changga allergiya", "Uyqusizlik", "Qandli diabet"]
+        health_status = ["Mutlaqo sog'lom", "Astma", "Yengil uzoqni ko me'yor", "Changga allergiya", "Uyqusizlik", "Qandli diabet"]
         hobbies = ["Ovchilik", "Pazandalik", "Texnika ta'mirlash", "O'rmonda omon qolish", "Shaxmat", "Yugurish", "Kitob o'qish"]
-        inventories = ["Dori-darmon qutisi", "Ov miltig'i", "Fonarik va batareyalar", "Suv filtri", "Urug'lar to'plami", "Konserva qutisi"]
-        phobias = ["Qorong'ulikdan qo'rqish", "Klaustrofobiya", "Paranoia", "Optimist", "Agressiv"]
+        inventories = ["Dori-darmon qutisi", "Ov miltig'i", "Fonaik va batareyalar", "Suv filtri", "Urug'lar toplami", "Konserva qush qutisi"]
+        phobias = ["Qorong'ulikdan qo'rqish", "Klaustrofobiya (tor joy)", "Paranoi baseline", "Optimist", "Agressiv"]
         specials = ["Istalgan o'yinchini chiqarib yuborish", "Sog'likni boshqasi bilan almashtirish", "Ovoz berishni bekor qilish"]
         genders = ["Erkak", "Ayol"]
         repro = ["Beshik tebrata oladi", "Beshik tebrata olmaydi"]
@@ -140,7 +140,7 @@ def get_main_keyboard(lang='ru'):
     markup.add(btn5, btn6)
     return markup
 
-# --- 6. Обработчики событий ---
+# --- 6. Обработчики ---
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -156,11 +156,7 @@ def set_language(call):
     user_languages[call.message.chat.id] = lang
     t = TEXTS[lang]
     
-    try:
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-    except:
-        pass
-        
+    bot.delete_message(call.message.chat.id, call.message.message_id)
     bot.send_message(
         call.message.chat.id,
         t['start_menu'],
@@ -239,5 +235,6 @@ def handle_text(message):
             bot.send_message(message.chat.id, t['room_not_found'])
 
 # --- 7. Запуск бота ---
-print("Бот успешно запущен!")
-bot.infinity_polling(timeout=10, long_polling_timeout=5)
+if __name__ == "__main__":
+    print("Бот успешно запущен!")
+    bot.infinity_polling(skip_pending_updates=True)
