@@ -19,7 +19,7 @@ def run_flask():
 threading.Thread(target=run_flask).start()
 
 # --- 2. Инициализация Бота ---
-TOKEN = os.environ.get("BOT_TOKEN", "8963766433:AAFX8f3AW0IuHq_BDBVPhgU43wcMAhjgPA")
+TOKEN = os.environ.get("BOT_TOKEN", "8963766433:AAFX8f3AW0IuHq_BDBVPhgU4U3wcMAhjGPA")
 bot = telebot.TeleBot(TOKEN)
 
 # Хранилища
@@ -237,4 +237,5 @@ def handle_text(message):
 # --- 7. Запуск бота ---
 if __name__ == "__main__":
     print("Бот успешно запущен!")
-    bot.infinity_polling(skip_pending_updates=True)
+    bot.remove_webhook()
+    bot.infinity_polling()
