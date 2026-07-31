@@ -147,15 +147,23 @@ def cmd_create_game(message):
     threading.Thread(target=run_discussion_timer, args=(chat_id, 60)).start()
 
 def send_player_card(chat_id, user_id, card):
+    prof = card['profession']
+    health = card['health']
+    hobby = card['hobby']
+    phobia = card['phobia']
+    inv = card['inventory']
+    ability_name = card['ability']['name']
+    ability_desc = card['ability']['desc']
+
     card_text = (
-        f"📋 **Твоя карточка выжившего:**\n\n"
-        f"{card['profession']}\n"
-        f"{card['health']}\n"
-        f"{card['hobby']}\n"
-        f"{card['phobia']}\n"
-        f"{card['inventory']}\n\n"
-        f"⚡ Особая фишка:['name']}\n"
-        f"📝 _{card['ability']['desc']}_"
+        "📋 **Твоя карточка выжившего:**\n\n"
+        + prof + "\n"
+        + health + "\n"
+        + hobby + "\n"
+        + phobia + "\n"
+        + inv + "\n\n"
+        + "⚡ **Особая фишка:** " + ability_name + "\n"
+        + "📝 _" + ability_desc + "_"
     )
     bot.send_message(chat_id, card_text, parse_mode="Markdown")
 
