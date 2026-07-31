@@ -5,7 +5,8 @@ import threading
 import telebot
 from telebot import types
 
-TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+# Твой токен вставлен прямо сюда
+TOKEN = "8963766433:AAFX8f3AW0IuHq_BDBVPhgU4U3wcMAhjGPA"
 bot = telebot.TeleBot(TOKEN)
 
 user_data = {}      # user_id: {"lang": "ru"}
@@ -240,40 +241,4 @@ def finish_voting(chat_id):
 
     kicked_id = max(vote_counts, key=vote_counts.get)
     
-    if game["used_abilities"].get(kicked_id) == "immunity":
-        bot.send_message(chat_id, "🛡 **Игрок защитился иммунитетом!** Никто не вылетает в этом раунде!")
-        game["votes"] = {}
-        return
-
-    kicked_player = next((p for p in game["players"] if p.id == kicked_id), None)
-    
-    if kicked_player:
-        cards = game["cards"].get(kicked_id, generate_random_card())
-        msg = TEXTS["ru"]["player_kicked"].format(
-            name=kicked_player.first_name,
-            prof=cards["profession"],
-            health=cards["health"],
-            hobby=cards["hobby"],
-            phobia=cards["phobia"],
-            inv=cards["inventory"],
-            ability=cards["ability"]["name"]
-        )
-        bot.send_message(chat_id, msg, parse_mode="Markdown")
-        
-        game["players"] = [p for p in game["players"] if p.id != kicked_id]
-        game["votes"] = {}
-
-# --- ДОПОЛНИТЕЛЬНЫЕ КОМАНДЫ ---
-@bot.message_handler(commands=['profile'])
-@bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["profile"], TEXTS["uz"]["profile"], TEXTS["en"]["profile"]])
-def cmd_profile(message):
-    bot.send_message(message.chat.id, f"👤 **Профиль**\n\nID: `{message.from_user.id}`\nСыграно игр: 0\nПобед: 0 🏆", parse_mode="Markdown")
-
-@bot.message_handler(commands=['shop'])
-@bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["shop"], TEXTS["uz"]["shop"], TEXTS["en"]["shop"]])
-def cmd_shop(message):
-    bot.send_message(message.chat.id, "💎 **VIP Магазин**\n\nПокупка уникальных скинов карт и VIP статусов! ✨")
-
-if __name__ == "__main__":
-    print("Бот обновлен и запущен!")
-    bot.infinity_polling()
+    if game
