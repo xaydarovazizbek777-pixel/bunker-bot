@@ -5,7 +5,6 @@ import threading
 import telebot
 from telebot import types
 
-# Бот берет токен из настроек Render (Environment Variables)
 TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 bot = telebot.TeleBot(TOKEN)
 
@@ -83,7 +82,7 @@ def generate_random_card():
         "ability": random.choice(ABILITIES)
     }
 
-# --- КОМАНДЫ ДЛЯ САРТА И ЯЗЫКОВ ---
+# --- КОМАНДЫ СТАРТА И ЯЗЫКОВ ---
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
     markup = types.InlineKeyboardMarkup()
