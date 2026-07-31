@@ -443,7 +443,8 @@ def send_player_card_private(user_id, card):
         f"🎒 Инвентарь:\n"
         f"🧬 Фертильность:\n"
         f"📌 Доп. факт:\n\n"
-        f"⚡ Фишка:['name']}\n_{card['ability']['desc']}_"
+        f"⚡ Фишка:['name']}\n"
+        f"_{card['ability']['desc']}_"
     )
     bot.send_message(user_id, card_text, parse_mode="Markdown", reply_markup=markup)
 
@@ -540,4 +541,98 @@ def start_voting_phase(code):
     for player in game["alive"]:
         markup.add(types.InlineKeyboardButton(f"❌ Исключить {player.first_name}", callback_data=f"vote_{code}_{player.id}"))
     
-    bot.send_message(game["chat_id"], "🗳 **Время вышло! Начинаем голосование!**\n
+    bot.send_message(game["chat_id"], "🗳 **Время вышло! Начинаем голосование!**\nВыберите, кого выгнать из бункера:", reply_markup=markup)
+    threading.Thread(target=run_voting_timer, args=(code, 60)).start()
+
+def run_voting_timer(code, seconds):
+    time.sleep(seconds)
+    game = active_games.get(code)
+    if game and game.get("status") == "in_progress":
+        finish_voting(code)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("vote_"))
+def cb_vote(call):
+    parts = call.data.split("_")
+    code, target_id, voter_id = parts[1], int(parts[2]), call.from_user.id
+    game = active_games.get(code)
+    
+    if not game or voter_id not in [p.id for p in game["alive"]]:
+        bot.answer_callback_query(call.id, "Вы не можете голосовать!")
+        return
+        
+    vote_weight = 2 if voter_id in game["double_votes"] else 1
+    game["votes"][voter_id] = (target_id, vote_weight)
+    bot.answer_callback_query(call.id, "Голос принят! 🗳")
+    
+    if len(game["votes"]) >= len(game["alive"]):
+        finish_voting(code)
+
+def finish_voting(code):
+    game = active_games.get(code)
+    if not game or "finished_vote" in game:
+        return
+        
+    game["finished_vote"] = True
+    vote_counts = {}
+    for voter, (target, weight) in game["votes"].items():
+        vote_counts[target] = vote_counts.get(target, 0) + weight
+        
+    kicked_id = max(vote_counts, key=vote_counts.get) if vote_counts else None
+    
+    # Проверка на иммунитет
+    if kicked_id in game["active_immunities"]:
+        bot.send_message(game["chat_id"], f"🛡 Игрок защищен **Иммунитетом**! Никто не вылетает в этом раунде.")
+        game["active_immunities"].remove(kicked_id)
+    elif kicked_id:
+        kicked_player = next((pl for pl in game["alive"] if pl.id == kicked_id), None)
+        if kicked_player:
+            game["alive"].remove(kicked_player)
+            update_user_stats(kicked_id, rating_add=-10)
+            bot.send_message(game["chat_id"], f"❌ **Результаты голосования:** Игрок **{kicked_player.first_name}** исключен из бункера!")
+
+    del game["finished_vote"]
+
+    if len(game["alive"]) <= game["bunker_capacity"]:
+        finish_game(code)
+    else:
+        game["round"] += 1
+        time.sleep(3)
+        start_new_round(code)
+
+def finish_game(code):
+    game = active_games.get(code)
+    if not game:
+        return
+
+    winners_list = "\n".join([f"🏆 {p.first_name}" for p in game["alive"]])
+    
+    for p in game["players"]:
+        if p in game["alive"]:
+            update_user_stats(p.id, coins_add=100, rating_add=25, win=True)
+            
+    bot.send_message(
+        game["chat_id"],
+        f"🎉 **ИГРА ЗАВЕРШЕНА!** ☣️\n\nПобедители, попавшие в бункер:\n{winners_list}\n\n🏆 Победители получают **+100 монет** и **+25 РТС**!",
+        parse_mode="Markdown"
+    )
+    del active_games[code]
+
+# --- РЕФЕРАЛКА И МАГАЗИН В ЛС ---
+@bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["shop"], TEXTS["uz"]["shop"], TEXTS["en"]["shop"], TEXTS["ru"]["ref"], TEXTS["uz"]["ref"], TEXTS["en"]["ref"]])
+def handle_shop_ref(message):
+    if message.chat.type != 'private':
+        return  # Только в ЛС!
+
+    if message.text in [TEXTS["ru"]["ref"], TEXTS["uz"]["ref"], TEXTS["en"]["ref"]]:
+        ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{message.from_user.id}"
+        bot.send_message(message.chat.id, f"🤝 **Реферальная программа**\n\nПриглашай друзей и получай **100 монет** 🪙!\n\n🔗 Твоя ссылка:\n`{ref_link}`", parse_mode="Markdown")
+    else:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("⭐ Купить VIP за 20 Stars", callback_data="buy_vip_stars"))
+        bot.send_message(message.chat.id, "💎 **VIP Магазин «Бункер»**\n\n👑 VIP-Статус дает:\n• Бесплатную пересдачу карт!\n• Корону возле ника 👑\n• +500 монет сразу!", reply_markup=markup, parse_mode="Markdown")
+
+if __name__ == "__main__":
+    setup_bot_commands()
+    threading.Thread(target=run_flask, daemon=True).start()
+    print("Бот запущен и готов к работе!")
+    bot.infinity_polling()
