@@ -5,14 +5,12 @@ import threading
 import telebot
 from telebot import types
 
-# Твой токен вставлен прямо сюда
 TOKEN = "8963766433:AAFX8f3AW0IuHq_BDBVPhgU4U3wcMAhjGPA"
 bot = telebot.TeleBot(TOKEN)
 
-user_data = {}      # user_id: {"lang": "ru"}
-active_games = {}   # chat_id: { "players": [...], "votes": {}, "cards": {}, "used_abilities": {} }
+user_data = {}
+active_games = {}
 
-# --- БАЗА ДАННЫХ ХАРАКТЕРИСТИК И СПОСОБНОСТЕЙ ---
 PROFESSIONS = ["💼 Врач-хирург", "💼 Инженер-механик", "💼 Агроном", "💼 Строитель", "💼 Ученый-физик", "💼 Повар", "💼 Электрик", "💼 Военный"]
 HEALTH_LIST = ["🏥 Абсолютно здоров", "🏥 Легкая аллергия", "🏥 Близорукость (-2)", "🏥 Астма (есть ингалятор)", "🏥 Бессонница"]
 HOBBIES = ["🎨 Выживальщик / Туризм", "🎨 Стрельба из лука", "🎨 Боевые искусства", "🎨 Радиолюбитель", "🎨 Огородничество"]
@@ -83,7 +81,6 @@ def generate_random_card():
         "ability": random.choice(ABILITIES)
     }
 
-# --- КОМАНДЫ СТАРТА И ЯЗЫКОВ ---
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
     markup = types.InlineKeyboardMarkup()
@@ -121,7 +118,6 @@ def show_main_menu(chat_id, user_id):
     bot.send_message(chat_id, TEXTS[lang]["welcome"], reply_markup=markup, parse_mode="Markdown")
     bot.send_message(chat_id, "📢 Добавить бота в группу:", reply_markup=inline_markup)
 
-# --- СОЗДАНИЕ ИГРЫ И ВЫДАЧА КАРТ ---
 @bot.message_handler(commands=['create', 'start_game'])
 @bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["create_game"], TEXTS["uz"]["create_game"], TEXTS["en"]["create_game"]])
 def cmd_create_game(message):
@@ -181,17 +177,14 @@ def use_ability(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
     game = active_games.get(chat_id)
-    
     if game and user_id in game["cards"]:
         if user_id in game["used_abilities"]:
             bot.reply_to(message, "⚠️ Вы уже использовали свою способность!")
             return
-        
         ability = game["cards"][user_id]["ability"]
         game["used_abilities"][user_id] = ability["id"]
         bot.send_message(chat_id, f"💥 **{message.from_user.first_name}** активировал фишку: **{ability['name']}**!")
 
-# --- АВТО-ТАЙМЕР И ГОЛОСОВАНИЕ ---
 def run_discussion_timer(chat_id, seconds):
     time.sleep(seconds)
     if chat_id in active_games:
@@ -201,11 +194,9 @@ def start_voting_phase(chat_id):
     game = active_games.get(chat_id)
     if not game:
         return
-    
     markup = types.InlineKeyboardMarkup()
     for player in game["players"]:
         markup.add(types.InlineKeyboardButton(f"❌ Исключить {player.first_name}", callback_data=f"vote_{player.id}"))
-    
     bot.send_message(chat_id, "🗳 **Время на обсуждение вышло! Начинаем голосование!** 🔥\nВыберите игрока для исключения:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("vote_"))
@@ -213,15 +204,12 @@ def cb_vote(call):
     chat_id = call.message.chat.id
     voter_id = call.from_user.id
     target_id = int(call.data.split("_")[1])
-    
     game = active_games.get(chat_id)
     if not game:
         bot.answer_callback_query(call.id, "Игра не найдена.")
         return
-    
     game["votes"][voter_id] = target_id
     bot.answer_callback_query(call.id, "Ваш голос принят! 🗳")
-    
     if len(game["votes"]) >= len(game["players"]):
         finish_voting(chat_id)
 
@@ -229,16 +217,44 @@ def finish_voting(chat_id):
     game = active_games.get(chat_id)
     if not game:
         return
-    
     vote_counts = {}
     for voter, target in game["votes"].items():
         weight = 2 if game["used_abilities"].get(voter) == "double_vote" else 1
         vote_counts[target] = vote_counts.get(target, 0) + weight
-    
     if not vote_counts:
         bot.send_message(chat_id, TEXTS["ru"]["nobody_kicked"])
         return
-
     kicked_id = max(vote_counts, key=vote_counts.get)
-    
-    if game
+    if game["used_abilities"].get(kicked_id) == "immunity":
+        bot.send_message(chat_id, "🛡 **Игрок защитился иммунитетом!** Никто не вылетает в этом раунде!")
+        game["votes"] = {}
+        return
+    kicked_player = next((p for p in game["players"] if p.id == kicked_id), None)
+    if kicked_player:
+        cards = game["cards"].get(kicked_id, generate_random_card())
+        msg = TEXTS["ru"]["player_kicked"].format(
+            name=kicked_player.first_name,
+            prof=cards["profession"],
+            health=cards["health"],
+            hobby=cards["hobby"],
+            phobia=cards["phobia"],
+            inv=cards["inventory"],
+            ability=cards["ability"]["name"]
+        )
+        bot.send_message(chat_id, msg, parse_mode="Markdown")
+        game["players"] = [p for p in game["players"] if p.id != kicked_id]
+        game["votes"] = {}
+
+@bot.message_handler(commands=['profile'])
+@bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["profile"], TEXTS["uz"]["profile"], TEXTS["en"]["profile"]])
+def cmd_profile(message):
+    bot.send_message(message.chat.id, f"👤 **Профиль**\n\nID: `{message.from_user.id}`\nСыграно игр: 0\nПобед: 0 🏆", parse_mode="Markdown")
+
+@bot.message_handler(commands=['shop'])
+@bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["shop"], TEXTS["uz"]["shop"], TEXTS["en"]["shop"]])
+def cmd_shop(message):
+    bot.send_message(message.chat.id, "💎 **VIP Магазин**\n\nПокупка уникальных скинов карт и VIP статусов! ✨")
+
+if __name__ == "__main__":
+    print("Бот обновлен и запущен!")
+    bot.infinity_polling()
