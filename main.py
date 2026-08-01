@@ -36,6 +36,7 @@ def setup_bot_commands():
         types.BotCommand("newgame", "🎮 Создать новую игру"),
         types.BotCommand("mycard", "🎴 Посмотреть свою карту (в ЛС)"),
         types.BotCommand("profile", "👤 Профиль и статистика"),
+        types.BotCommand("shop", "🛍 Магазин и VIP"),
         types.BotCommand("top", "🏆 Таблица лидеров (Топ-10)"),
         types.BotCommand("lang", "🌐 Сменить язык / Language"),
         types.BotCommand("rules", "📖 Правила игры")
@@ -57,6 +58,11 @@ def init_db():
             lang TEXT DEFAULT 'ru',
             coins INTEGER DEFAULT 100,
             vip INTEGER DEFAULT 0,
+            title TEXT DEFAULT 'Выживший',
+            medkit INTEGER DEFAULT 0,
+            radio INTEGER DEFAULT 0,
+            knife INTEGER DEFAULT 0,
+            armor INTEGER DEFAULT 0,
             rating INTEGER DEFAULT 1000,
             games_played INTEGER DEFAULT 0,
             games_won INTEGER DEFAULT 0,
@@ -75,21 +81,26 @@ def get_db():
 def get_user_info(user_id, username="Выживший"):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT lang, coins, vip, rating, games_played, games_won, last_bonus FROM users WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT lang, coins, vip, title, medkit, radio, knife, armor, rating, games_played, games_won, last_bonus FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     if not row:
         cursor.execute(
-            "INSERT INTO users (user_id, username, lang, coins, vip, rating, games_played, games_won) VALUES (?, ?, 'ru', 100, 0, 1000, 0, 0)",
+            "INSERT INTO users (user_id, username, lang, coins, vip, title, rating, games_played, games_won) VALUES (?, ?, 'ru', 100, 0, 'Выживший', 1000, 0, 0)",
             (user_id, username)
         )
         conn.commit()
-        info = {"lang": "ru", "coins": 100, "vip": False, "rating": 1000, "played": 0, "won": 0, "last_bonus": None}
+        info = {
+            "lang": "ru", "coins": 100, "vip": False, "title": "Выживший",
+            "medkit": 0, "radio": 0, "knife": 0, "armor": 0,
+            "rating": 1000, "played": 0, "won": 0, "last_bonus": None
+        }
     else:
         cursor.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
         conn.commit()
         info = {
-            "lang": row[0], "coins": row[1], "vip": bool(row[2]),
-            "rating": row[3], "played": row[4], "won": row[5], "last_bonus": row[6]
+            "lang": row[0], "coins": row[1], "vip": bool(row[2]), "title": row[3],
+            "medkit": row[4], "radio": row[5], "knife": row[6], "armor": row[7],
+            "rating": row[8], "played": row[9], "won": row[10], "last_bonus": row[11]
         }
     conn.close()
     return info
@@ -131,14 +142,14 @@ def update_user_stats(user_id, coins_add=0, rating_add=0, win=False):
     conn.commit()
     conn.close()
 
-# --- ЯЗЫКОВЫЕ ТЕКСТЫ ДЛЯ ЛС ---
+# --- ЯЗЫКОВЫЕ ТЕКСТЫ ---
 TEXTS = {
     "ru": {
         "welcome": "👋 **Добро пожаловать в «Бункер»!** ☣️\n\nИспользуй меню ниже для управления профилем и игрой!",
         "create_game": "🎮 Создать игру",
         "join_game": "🔗 Подключиться по коду",
         "profile": "👤 Профиль",
-        "shop": "💎 VIP Магазин",
+        "shop": "🛍 Магазин",
         "ref": "🤝 Рефералка",
         "top": "🏆 Топ выживших",
         "daily": "🎁 Ежедневный бонус",
@@ -149,7 +160,7 @@ TEXTS = {
         "create_game": "🎮 O'yin yaratish",
         "join_game": "🔗 Kod orqali kirish",
         "profile": "👤 Profil",
-        "shop": "💎 VIP Do'kon",
+        "shop": "🛍 Do'kon",
         "ref": "🤝 Taklif qilish",
         "top": "🏆 Top o'yinchilar",
         "daily": "🎁 Kunlik bonus",
@@ -160,7 +171,7 @@ TEXTS = {
         "create_game": "🎮 Create Game",
         "join_game": "🔗 Join by Code",
         "profile": "👤 Profile",
-        "shop": "💎 VIP Shop",
+        "shop": "🛍 Shop",
         "ref": "🤝 Referral",
         "top": "🏆 Leaderboard",
         "daily": "🎁 Daily Bonus",
@@ -197,6 +208,13 @@ ABILITIES = [
     {"id": "reveal_card", "name": "🔍 Шпион", "desc": "Узнать случайную характеристику соперника."}
 ]
 
+ROUND_CATEGORIES = {
+    1: ("prof_age", "💼 Профессия + 👤 Пол и Возраст"),
+    2: ("health_inv", "🏥 Здоровье + 🎒 Инвентарь"),
+    3: ("hobby_phobia", "🎨 Хобби + 👁 Фобия"),
+    4: ("fert_fact", "🧬 Фертильность + 📌 Доп. факт")
+}
+
 active_games = {}   
 user_to_game = {}   
 
@@ -218,7 +236,7 @@ def generate_random_card():
         "ability": random.choice(ABILITIES)
     }
 
-# --- ОБРАБОТКА КОМАНД И ГЛАВНОГО МЕНЮ ЛС ---
+# --- ОБРАБОТКА /START И ССЫЛОК ---
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
     args = message.text.split()
@@ -246,14 +264,14 @@ def show_main_menu(chat_id, user_id):
     lang = info["lang"] if info["lang"] in TEXTS else "ru"
     t = TEXTS[lang]
 
-    # Reply Клавиатура (Основное меню)
+    # Кнопки основного меню
     reply_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     reply_markup.add(types.KeyboardButton(t["create_game"]), types.KeyboardButton(t["join_game"]))
     reply_markup.add(types.KeyboardButton(t["profile"]), types.KeyboardButton(t["top"]))
     reply_markup.add(types.KeyboardButton(t["daily"]), types.KeyboardButton(t["shop"]))
     reply_markup.add(types.KeyboardButton(t["ref"]), types.KeyboardButton(t["lang"]))
     
-    # Inline Клавиатура (Добавить в группу + Канал)
+    # Инлайн-ссылки под сообщением
     inline_markup = types.InlineKeyboardMarkup()
     add_group_url = "https://t.me/" + BOT_USERNAME + "?startgroup=true"
     inline_markup.add(types.InlineKeyboardButton("➕ Добавить бота в группу", url=add_group_url))
@@ -262,7 +280,6 @@ def show_main_menu(chat_id, user_id):
     bot.send_message(chat_id, t["welcome"], reply_markup=reply_markup, parse_mode="Markdown")
     bot.send_message(chat_id, "📌 **Быстрые ссылки:**", reply_markup=inline_markup, parse_mode="Markdown")
 
-# --- ВЫБОР ЯЗЫКА (ТОЛЬКО В ЛС) ---
 @bot.message_handler(commands=['lang'])
 @bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["lang"], TEXTS["uz"]["lang"], TEXTS["en"]["lang"]])
 def cmd_change_lang(message):
@@ -286,7 +303,7 @@ def cb_set_lang(call):
 def cmd_rules(message):
     bot.send_message(
         message.chat.id,
-        "📖 **Правила игры «Бункер»:**\n\n1️⃣ На Земле произошла катастрофа.\n2️⃣ У каждого игрока есть уникальная карта характеристик.\n3️⃣ Раундами через споры и голосования выбиваются самые бесполезные выжившие.\n4️⃣ Выигрывают те, кто вошёл в бункер!",
+        "📖 **Правила игры «Бункер»:**\n\n1️⃣ На Земле произошла катастрофа.\n2️⃣ У каждого игрока есть уникальная карта характеристик в ЛС.\n3️⃣ Каждый раунд игроки открывают по 2 характеристики и доказывают свою полезность.\n4️⃣ Голосованием выбывают самые непригодные!",
         parse_mode="Markdown"
     )
 
@@ -314,9 +331,15 @@ def cmd_profile(message):
     text = (
         "👤 **Профиль выжившего:**\n\n"
         "🆔 ID: `" + str(message.from_user.id) + "`\n"
+        "🏷 Титул: **" + str(info['title']) + "**\n"
         "✨ Статус: " + vip_status + "\n"
         "🪙 Монеты: **" + str(info['coins']) + "**\n"
         "🏆 Рейтинг: **" + str(info['rating']) + " РТС**\n\n"
+        "🎒 **Инвентарь предметов:**\n"
+        "• 🩹 Аптечка: " + str(info['medkit']) + " шт.\n"
+        "• 📻 Рация: " + str(info['radio']) + " шт.\n"
+        "• 🔪 Охотничий нож: " + str(info['knife']) + " шт.\n"
+        "• 🛡 Бронежилет: " + str(info['armor']) + " шт.\n\n"
         "📊 Игр: **" + str(info['played']) + "** | Побед: **" + str(info['won']) + "** (" + str(winrate) + "%)"
     )
     bot.send_message(message.chat.id, text, parse_mode="Markdown")
@@ -356,6 +379,119 @@ def cmd_daily_bonus(message):
 
     bot.send_message(message.chat.id, "🎉 **Бонус получен:** +50 монет 🪙!")
 
+# --- МАГАЗИН И ПОКУПКА VIP ЗА 10 STARS ---
+@bot.message_handler(commands=['shop'])
+@bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["shop"], TEXTS["uz"]["shop"], TEXTS["en"]["shop"]])
+def handle_shop(message):
+    if message.chat.type != 'private':
+        return
+
+    info = get_user_info(message.from_user.id, message.from_user.first_name)
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    markup.add(
+        types.InlineKeyboardButton("⭐ VIP-Статус — 10 Stars", callback_data="buy_vip_10stars"),
+        types.InlineKeyboardButton("🩹 Аптечка (150 🪙)", callback_data="buy_item_medkit"),
+        types.InlineKeyboardButton("📻 Рация (120 🪙)", callback_data="buy_item_radio"),
+        types.InlineKeyboardButton("🔪 Охотничий нож (100 🪙)", callback_data="buy_item_knife"),
+        types.InlineKeyboardButton("🛡 Бронежилет (200 🪙)", callback_data="buy_item_armor"),
+        types.InlineKeyboardButton("🏷 Титул «Легенда Бункера» (300 🪙)", callback_data="buy_title_legend"),
+        types.InlineKeyboardButton("👑 Титул «Хозяин Пустоши» (500 🪙)", callback_data="buy_title_wasteland")
+    )
+
+    shop_text = (
+        "🛍 **МАГАЗИН «БУНКЕР»**\n\n"
+        "🪙 Твой баланс: **" + str(info['coins']) + " монет**\n\n"
+        "👑 **VIP-Статус (10 ⭐ Stars):**\n"
+        "• Бесплатная пересдача карт во всех играх!\n"
+        "• +500 монет мгновенно при покупке!\n"
+        "• Особый значок VIP возле ника.\n\n"
+        "🛒 Выберите товар для покупки ниже:"
+    )
+    bot.send_message(message.chat.id, shop_text, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda call: call.data == "buy_vip_10stars")
+def cb_buy_vip_stars(call):
+    prices = [types.LabeledPrice(label="VIP Статус в Бункере", amount=10)]
+    bot.send_invoice(
+        call.message.chat.id,
+        title="👑 VIP-Статус «Бункер»",
+        description="Эксклюзивный статус VIP, +500 монет и бесплатные пересдачи карт!",
+        invoice_payload="vip_subscription_10_stars",
+        provider_token="", # Для Stars токен пустой
+        currency="XTR",
+        prices=prices
+    )
+
+@bot.pre_checkout_query_handler(func=lambda query: True)
+def process_pre_checkout(pre_checkout_query):
+    bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+@bot.message_handler(content_types=['successful_payment'])
+def process_successful_payment(message):
+    user_id = message.from_user.id
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET vip = 1, coins = coins + 500 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    
+    bot.send_message(message.chat.id, "🎉 **Поздравляем с покупкой VIP!**\n👑 Вам присвоен VIP-Статус и зачислено **+500 монет** 🪙!")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
+def cb_buy_shop_items(call):
+    user_id = call.from_user.id
+    item = call.data.replace("buy_", "")
+    info = get_user_info(user_id, call.from_user.first_name)
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    if item == "item_medkit":
+        if info["coins"] < 150:
+            bot.answer_callback_query(call.id, "❌ Недостаточно монет (нужно 150 🪙)!", show_alert=True)
+            return
+        cursor.execute("UPDATE users SET coins = coins - 150, medkit = medkit + 1 WHERE user_id = ?", (user_id,))
+        bot.answer_callback_query(call.id, "✅ Вы купили Аптечку 🩹!")
+        
+    elif item == "item_radio":
+        if info["coins"] < 120:
+            bot.answer_callback_query(call.id, "❌ Недостаточно монет (нужно 120 🪙)!", show_alert=True)
+            return
+        cursor.execute("UPDATE users SET coins = coins - 120, radio = radio + 1 WHERE user_id = ?", (user_id,))
+        bot.answer_callback_query(call.id, "✅ Вы купили Рацию 📻!")
+        
+    elif item == "item_knife":
+        if info["coins"] < 100:
+            bot.answer_callback_query(call.id, "❌ Недостаточно монет (нужно 100 🪙)!", show_alert=True)
+            return
+        cursor.execute("UPDATE users SET coins = coins - 100, knife = knife + 1 WHERE user_id = ?", (user_id,))
+        bot.answer_callback_query(call.id, "✅ Вы купили Охотничий нож 🔪!")
+        
+    elif item == "item_armor":
+        if info["coins"] < 200:
+            bot.answer_callback_query(call.id, "❌ Недостаточно монет (нужно 200 🪙)!", show_alert=True)
+            return
+        cursor.execute("UPDATE users SET coins = coins - 200, armor = armor + 1 WHERE user_id = ?", (user_id,))
+        bot.answer_callback_query(call.id, "✅ Вы купили Бронежилет 🛡!")
+        
+    elif item == "title_legend":
+        if info["coins"] < 300:
+            bot.answer_callback_query(call.id, "❌ Недостаточно монет (нужно 300 🪙)!", show_alert=True)
+            return
+        cursor.execute("UPDATE users SET coins = coins - 300, title = '☣️ Легенда Бункера' WHERE user_id = ?", (user_id,))
+        bot.answer_callback_query(call.id, "✅ Куплен титул «Легенда Бункера»!")
+
+    elif item == "title_wasteland":
+        if info["coins"] < 500:
+            bot.answer_callback_query(call.id, "❌ Недостаточно монет (нужно 500 🪙)!", show_alert=True)
+            return
+        cursor.execute("UPDATE users SET coins = coins - 500, title = '👑 Хозяин Пустоши' WHERE user_id = ?", (user_id,))
+        bot.answer_callback_query(call.id, "✅ Куплен титул «Хозяин Пустоши»!")
+
+    conn.commit()
+    conn.close()
+
 # --- ИГРОВАЯ ЛОГИКА ---
 @bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["create_game"], TEXTS["uz"]["create_game"], TEXTS["en"]["create_game"]])
 def handle_create_game(message):
@@ -374,6 +510,7 @@ def handle_create_game(message):
         "catastrophe": catastrophe,
         "votes": {},
         "cards": {},
+        "revealed_traits": {}, 
         "used_abilities": {},
         "active_immunities": [],
         "double_votes": [],
@@ -434,6 +571,7 @@ def cb_start_game(call):
     
     for player in game["players"]:
         game["cards"][player.id] = generate_random_card()
+        game["revealed_traits"][player.id] = []
         try:
             bot.send_message(player.id, "🎮 **Игра началась!** Вот твоя персональная карточка:")
             send_player_card_private(player.id, game["cards"][player.id])
@@ -529,18 +667,67 @@ def start_new_round(code):
     event = random.choice(AI_ROUND_EVENTS)
     game["votes"] = {}
     
+    round_num = min(game["round"], 4)
+    trait_key, trait_name = ROUND_CATEGORIES[round_num]
+
     msg_text = (
         "🔄 **РАУНД " + str(game['round']) + "**\n\n"
         "⚡ **Происшествие:**\n" + event + "\n\n"
+        "📢 **Тема раунда:** Открываем **" + trait_name + "**!\n"
+        "✉️ *Всем выжившим отправлена кнопка для раскрытия 2-х характеристик в ЛС бота!*\n\n"
         "👥 Выживших: **" + str(len(game['alive'])) + "** | 🏛 Мест в бункере: **" + str(game['bunker_capacity']) + "**\n\n"
-        "⏳ **Обсуждайте, кто полезнее! (60 секунд)**"
+        "⏳ **Обсуждайте 50 секунд!**"
     )
     
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("🎴 Моя карта и фишки (в ЛС)", url="https://t.me/" + BOT_USERNAME))
+    bot.send_message(game["chat_id"], msg_text, parse_mode="Markdown")
 
-    bot.send_message(game["chat_id"], msg_text, parse_mode="Markdown", reply_markup=markup)
-    threading.Thread(target=run_discussion_timer, args=(code, 60)).start()
+    for player in game["alive"]:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔓 Открыть 2 характеристики в чат", callback_data="reveal_trait_" + code))
+        try:
+            bot.send_message(player.id, "📢 **Раунд " + str(game['round']) + ":** Нажми кнопку, чтобы открыто показать **" + trait_name + "** в общий чат!", reply_markup=markup)
+        except Exception:
+            pass
+
+    threading.Thread(target=run_discussion_timer, args=(code, 50)).start()
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reveal_trait_"))
+def cb_reveal_trait(call):
+    code = call.data.split("_")[-1]
+    game = active_games.get(code)
+    user_id = call.from_user.id
+
+    if not game or user_id not in [p.id for p in game["alive"]]:
+        bot.answer_callback_query(call.id, "Вы не выживший в этой игре!", show_alert=True)
+        return
+
+    round_num = min(game["round"], 4)
+    trait_key, trait_name = ROUND_CATEGORIES[round_num]
+
+    if trait_key in game["revealed_traits"].get(user_id, []):
+        bot.answer_callback_query(call.id, "Вы уже открыли эти характеристики в этом раунде!", show_alert=True)
+        return
+
+    card = game["cards"][user_id]
+    game["revealed_traits"][user_id].append(trait_key)
+
+    trait_value = ""
+    if trait_key == "prof_age":
+        trait_value = "💼 **Профессия:** " + card["profession"] + "\n👤 **Пол и Возраст:** " + card["gender_age"]
+    elif trait_key == "health_inv":
+        trait_value = "🏥 **Здоровье:** " + card["health"] + "\n🎒 **Инвентарь:** " + card["inventory"]
+    elif trait_key == "hobby_phobia":
+        trait_value = "🎨 **Хобби:** " + card["hobby"] + "\n👁 **Фобия:** " + card["phobia"]
+    elif trait_key == "fert_fact":
+        trait_value = "🧬 **Фертильность:** " + card["fertility"] + "\n📌 **Доп. факт:** " + card["fact"]
+
+    bot.answer_callback_query(call.id, "Характеристики отправлены в чат!")
+    
+    bot.send_message(
+        game["chat_id"],
+        "📢 **" + call.from_user.first_name + "** раскрыл свои данные:\n\n" + trait_value,
+        parse_mode="Markdown"
+    )
 
 def run_discussion_timer(code, seconds):
     time.sleep(seconds)
@@ -556,8 +743,8 @@ def start_voting_phase(code):
     for player in game["alive"]:
         markup.add(types.InlineKeyboardButton("❌ Исключить " + player.first_name, callback_data="vote_" + code + "_" + str(player.id)))
     
-    bot.send_message(game["chat_id"], "🗳 **Время вышло! Начинаем голосование!**\nВыберите, кого выгнать из бункера:", reply_markup=markup)
-    threading.Thread(target=run_voting_timer, args=(code, 60)).start()
+    bot.send_message(game["chat_id"], "🗳 **Время для обсуждения вышло! Начинаем голосование!**\nВыберите, кого выгнать из бункера:", reply_markup=markup)
+    threading.Thread(target=run_voting_timer, args=(code, 45)).start()
 
 def run_voting_timer(code, seconds):
     time.sleep(seconds)
@@ -631,19 +818,13 @@ def finish_game(code):
     )
     del active_games[code]
 
-# --- РЕФЕРАЛКА И МАГАЗИН В ЛС ---
-@bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["shop"], TEXTS["uz"]["shop"], TEXTS["en"]["shop"], TEXTS["ru"]["ref"], TEXTS["uz"]["ref"], TEXTS["en"]["ref"]])
-def handle_shop_ref(message):
+# --- РЕФЕРАЛЬНАЯ СИСТЕМА ---
+@bot.message_handler(func=lambda m: m.text in [TEXTS["ru"]["ref"], TEXTS["uz"]["ref"], TEXTS["en"]["ref"]])
+def handle_ref(message):
     if message.chat.type != 'private':
         return
-
-    if message.text in [TEXTS["ru"]["ref"], TEXTS["uz"]["ref"], TEXTS["en"]["ref"]]:
-        ref_link = "https://t.me/" + BOT_USERNAME + "?start=ref_" + str(message.from_user.id)
-        bot.send_message(message.chat.id, "🤝 **Реферальная программа**\n\nПриглашай друзей и получай **100 монет** 🪙!\n\n🔗 Твоя ссылка:\n`" + ref_link + "`", parse_mode="Markdown")
-    else:
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("⭐ Купить VIP за 20 Stars", callback_data="buy_vip_stars"))
-        bot.send_message(message.chat.id, "💎 **VIP Магазин «Бункер»**\n\n👑 VIP-Статус дает:\n• Бесплатную пересдачу карт!\n• Корону возле ника 👑\n• +500 монет сразу!", reply_markup=markup, parse_mode="Markdown")
+    ref_link = "https://t.me/" + BOT_USERNAME + "?start=ref_" + str(message.from_user.id)
+    bot.send_message(message.chat.id, "🤝 **Реферальная программа**\n\nПриглашай друзей и получай **100 монет** 🪙!\n\n🔗 Твоя ссылка:\n`" + ref_link + "`", parse_mode="Markdown")
 
 if __name__ == "__main__":
     setup_bot_commands()
