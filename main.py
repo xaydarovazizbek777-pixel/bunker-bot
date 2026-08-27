@@ -1,14 +1,18 @@
 import os
 import asyncio
 import logging
+import static_ffmpeg
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.types import FSInputFile, ReplyKeyboardRemove, BotCommand
 from gtts import gTTS
 import yt_dlp
 
-BOT_TOKEN = "8963766433:AAFX8f3AW0IuHq_BDBVPhgU4U3wcMAhjGPA"
-ADMIN_ID = 0  # Сюда можно вписать свой Telegram ID, если хочешь ограничить /stats
+# Инициализируем ffmpeg
+static_ffmpeg.add_paths()
+
+# Новый токен твоего бота
+BOT_TOKEN = "8765852488:AAErO2_3gbQCR8UG7AncX64p2d3W3z5W0Tg"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -16,23 +20,22 @@ logging.basicConfig(level=logging.INFO)
 
 os.makedirs("downloads", exist_ok=True)
 
-# Хранилища данных
 user_languages = {}
 users_list = set()
-stats_counter = {"videos": 0, "audio": 0, "stickers": 0, "notes": 0}
+stats_counter = {"videos": 0, "audio": 0, "stickers": 0, "notes": 0, "searches": 0}
 
-# Меню команд в Telegram (при нажатии на слэш /)
+# Меню команд в Telegram (при нажатии на /)
 async def set_main_menu(bot: Bot):
     main_menu_commands = [
-        BotCommand(command="start", description="🚀 Запустить бота / Главное меню"),
+        BotCommand(command="start", description="🚀 Главное меню / Перезапуск"),
+        BotCommand(command="music", description="🔎 Найти и скачать музыку (/music название)"),
         BotCommand(command="say", description="🗣 Озвучить текст (/say привет)"),
-        BotCommand(command="lang", description="🌐 Сменить язык / Change lang"),
-        BotCommand(command="stats", description="📊 Статистика работы"),
-        BotCommand(command="help", description="❓ Инструкция и возможности"),
+        BotCommand(command="lang", description="🌐 Сменить язык / Change language"),
+        BotCommand(command="stats", description="📊 Статистика использования"),
+        BotCommand(command="help", description="❓ Инструкция"),
     ]
     await bot.set_my_commands(main_menu_commands)
 
-# Регистрация новых пользователей
 def register_user(user_id: int):
     users_list.add(user_id)
 
@@ -41,14 +44,58 @@ def register_user(user_id: int):
 async def start_cmd(message: types.Message):
     register_user(message.from_user.id)
     text = (
-        "🚀 **Привет! Я твой супер медиа-помощник.**\n\n"
+        "🚀 **Привет! Я твой универсальный медиа-помощник.**\n\n"
         "✨ **Мои возможности:**\n"
-        "1. 📥 **Ссылка** — отправь ссылку (TikTok/Reels/Shorts) и выбери формат (Видео или MP3).\n"
-        "2. 🔄 **Видео / Документ** — отправь видео, чтобы получить кружочек или извлечь MP3.\n"
-        "3. 🖼 **Фотография** — отправь фото, чтобы превратить её в Стикер!\n"
-        "4. 🗣 **Озвучка** — напиши `/say Текст`, и я создам голосовое сообщение."
+        "1. 📥 **Скачивание по ссылке** — отправь ссылку (TikTok/Reels/Shorts) и скачай Видео или MP3.\n"
+        "2. 🔎 **Поиск музыки** — напиши `/music Название` (например `/music Miyagi`), и я найду MP3!\n"
+        "3. 🔄 **Видео в кружочек** — отправь видео, чтобы сделать круглое видеосообщение.\n"
+        "4. 🖼 **Фото в стикер** — отправь картинку, чтобы получить Telegram-стикер.\n"
+        "5. 🗣 **Озвучка текста** — напиши `/say Текст`."
     )
     await message.answer(text, reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown")
+
+# Команда /music - Поиск и скачивание любой музыки по названию
+@dp.message(Command("music"))
+async def search_music_handler(message: types.Message):
+    register_user(message.from_user.id)
+    query = message.text.replace("/music", "").strip()
+    
+    if not query:
+        return await message.answer("⚠️ Напиши название песни после команды.\nПример: `/say /music Miyagi Captain`", parse_mode="Markdown")
+    
+    status_msg = await message.answer(f"🔎 Ищу песню: **{query}**...", parse_mode="Markdown")
+    user_id = message.from_user.id
+    output_path = f"downloads/{user_id}_search.mp3"
+    
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': output_path,
+        'quiet': True,
+        'default_search': 'ytsearch1:',  # Ищет первое совпадение на YouTube
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+    }
+    
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([query]))
+        
+        if not os.path.exists(output_path) and os.path.exists(output_path + ".mp3"):
+            output_path += ".mp3"
+
+        if os.path.exists(output_path):
+            await message.answer_audio(FSInputFile(output_path), caption=f"🎵 Найдено по запросу: **{query}**", parse_mode="Markdown")
+            stats_counter['searches'] += 1
+            stats_counter['audio'] += 1
+            os.remove(output_path)
+            await status_msg.delete()
+        else:
+            await status_msg.edit_text("❌ Песня не найдена. Попробуй уточнить название.")
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Ошибка при поиске: {str(e)}")
 
 # Команда /lang
 @dp.message(Command("lang"))
@@ -80,8 +127,9 @@ async def stats_cmd(message: types.Message):
     text = (
         "📊 **Статистика бота:**\n\n"
         f"👥 Всего пользователей: `{len(users_list)}`\n"
+        f"🔎 Найдено песен (/music): `{stats_counter['searches']}`\n"
         f"🎬 Скачано видео: `{stats_counter['videos']}`\n"
-        f"🎵 Скачано/Извлечено MP3: `{stats_counter['audio']}`\n"
+        f"🎵 Всего MP3 отправлено: `{stats_counter['audio']}`\n"
         f"🔄 Сделано кружочков: `{stats_counter['notes']}`\n"
         f"🖼 Создано стикеров: `{stats_counter['stickers']}`"
     )
@@ -92,13 +140,14 @@ async def stats_cmd(message: types.Message):
 async def help_cmd(message: types.Message):
     await message.answer(
         "❓ **Как со мной работать:**\n\n"
-        "• **Скачать видео/музыку:** Отправь ссылку из TikTok, Instagram Reels или YouTube.\n"
-        "• **Сделать стикер:** Просто пришли любую фотографию как обычное изображение.\n"
+        "• **Найти песню:** Напиши `/music Название трека`.\n"
+        "• **Скачать видео/музыку по ссылке:** Отправь ссылку из TikTok, Reels или Shorts.\n"
+        "• **Сделать стикер:** Пришли фотографию.\n"
         "• **Сделать кружочек:** Пришли видеофайл.\n"
-        "• **Сделать озвучку:** Напиши `/say Привет, как дела?`"
+        "• **Озвучить текст:** Напиши `/say Текст`"
     )
 
-# Выбор формата скачивания при отправке ссылки
+# Выбор формата скачивания по ссылке
 @dp.message(F.text.startswith("http://") | F.text.startswith("https://"))
 async def ask_download_format(message: types.Message):
     register_user(message.from_user.id)
@@ -117,7 +166,7 @@ async def process_download(callback: types.CallbackQuery):
     url = callback.message.reply_to_message.text.strip()
     action = callback.data
     
-    status_msg = await callback.message.edit_text("⏳ Идет скачивание, подождите...")
+    status_msg = await callback.message.edit_text("⏳ Идет скачивание...")
     user_id = callback.from_user.id
     
     if action == "dl_video":
@@ -152,7 +201,6 @@ async def process_download(callback: types.CallbackQuery):
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]))
             
-            # yt-dlp может добавить расширение .mp3
             if not os.path.exists(output_path) and os.path.exists(output_path + ".mp3"):
                 output_path += ".mp3"
 
@@ -255,7 +303,7 @@ async def text_to_speech_handler(message: types.Message):
     register_user(message.from_user.id)
     text = message.text.replace("/say", "").strip()
     if not text:
-        return await message.answer("⚠️ Напиши текст после команды, например: `/say Привет как дела`")
+        return await message.answer("⚠️ Напиши текст после команды, например: `/say Привет`", parse_mode="Markdown")
     output_audio = f"downloads/{message.from_user.id}_audio.ogg"
     
     lang = user_languages.get(message.from_user.id, "ru")
