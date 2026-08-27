@@ -167,12 +167,12 @@ async def search_music_handler(message: types.Message):
     status_msg = await message.answer(get_text(user_id, "searching").format(query=query), parse_mode="Markdown")
     output_path = f"downloads/{user_id}_search.mp3"
     
+    # Сначала ищем в SoundCloud (без блокировок YouTube), затем общие источники
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': output_path,
         'quiet': True,
-        'default_search': 'ytsearch1:',
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+        'default_search': 'scsearch1:',  # Поиск SoundCloud
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -196,7 +196,24 @@ async def search_music_handler(message: types.Message):
         else:
             await status_msg.edit_text(get_text(user_id, "not_found"))
     except Exception as e:
-        await status_msg.edit_text(f"❌ Error: {str(e)}")
+        # Резервный поиск, если первый запрос отловил ошибку
+        try:
+            ydl_opts['default_search'] = 'ytsearch1:'
+            ydl_opts['nocheckcertificate'] = True
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([query]))
+            if not os.path.exists(output_path) and os.path.exists(output_path + ".mp3"):
+                output_path += ".mp3"
+            if os.path.exists(output_path):
+                await message.answer_audio(FSInputFile(output_path), caption=get_text(user_id, "found_music").format(query=query), parse_mode="Markdown")
+                stats_counter['searches'] += 1
+                stats_counter['audio'] += 1
+                os.remove(output_path)
+                await status_msg.delete()
+                return
+        except Exception:
+            pass
+        await status_msg.edit_text(get_text(user_id, "not_found"))
 
 @dp.message(Command("lang"))
 async def lang_cmd(message: types.Message):
@@ -265,7 +282,6 @@ async def process_download(callback: types.CallbackQuery):
             'format': 'mp4/best',
             'outtmpl': output_path,
             'quiet': True,
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
         }
         try:
             loop = asyncio.get_event_loop()
@@ -286,7 +302,6 @@ async def process_download(callback: types.CallbackQuery):
             'format': 'bestaudio/best',
             'outtmpl': output_path,
             'quiet': True,
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
@@ -403,7 +418,8 @@ async def text_to_speech_handler(message: types.Message):
     output_audio = f"downloads/{user_id}_audio.ogg"
     
     lang = user_languages.get(user_id, "ru")
-    tts_lang = "ru" if lang == "ru" else ("en" if lang == "en" else "uz" if lang == "uz" else "ru")
+    # gTTS поддерживает только 'ru' и 'en' для наших вариантов
+    tts_lang = "ru" if lang in ["ru", "uz"] else "en"
     
     try:
         gTTS(text=text, lang=tts_lang).save(output_audio)
