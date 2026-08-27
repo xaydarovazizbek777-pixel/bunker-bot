@@ -3,12 +3,12 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, ReplyKeyboardRemove, BotCommand
 from gtts import gTTS
 import yt_dlp
 
-# Твой токен вставлен!
 BOT_TOKEN = "8963766433:AAFX8f3AW0IuHq_BDBVPhgU4U3wcMAhjGPA"
+ADMIN_ID = 0  # Сюда можно вписать свой Telegram ID, если хочешь ограничить /stats
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -16,66 +16,257 @@ logging.basicConfig(level=logging.INFO)
 
 os.makedirs("downloads", exist_ok=True)
 
+# Хранилища данных
+user_languages = {}
+users_list = set()
+stats_counter = {"videos": 0, "audio": 0, "stickers": 0, "notes": 0}
+
+# Меню команд в Telegram (при нажатии на слэш /)
+async def set_main_menu(bot: Bot):
+    main_menu_commands = [
+        BotCommand(command="start", description="🚀 Запустить бота / Главное меню"),
+        BotCommand(command="say", description="🗣 Озвучить текст (/say привет)"),
+        BotCommand(command="lang", description="🌐 Сменить язык / Change lang"),
+        BotCommand(command="stats", description="📊 Статистика работы"),
+        BotCommand(command="help", description="❓ Инструкция и возможности"),
+    ]
+    await bot.set_my_commands(main_menu_commands)
+
+# Регистрация новых пользователей
+def register_user(user_id: int):
+    users_list.add(user_id)
+
+# Команда /start
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
+    register_user(message.from_user.id)
+    text = (
+        "🚀 **Привет! Я твой супер медиа-помощник.**\n\n"
+        "✨ **Мои возможности:**\n"
+        "1. 📥 **Ссылка** — отправь ссылку (TikTok/Reels/Shorts) и выбери формат (Видео или MP3).\n"
+        "2. 🔄 **Видео / Документ** — отправь видео, чтобы получить кружочек или извлечь MP3.\n"
+        "3. 🖼 **Фотография** — отправь фото, чтобы превратить её в Стикер!\n"
+        "4. 🗣 **Озвучка** — напиши `/say Текст`, и я создам голосовое сообщение."
+    )
+    await message.answer(text, reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown")
+
+# Команда /lang
+@dp.message(Command("lang"))
+async def lang_cmd(message: types.Message):
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [
+            types.InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru"),
+            types.InlineKeyboardButton(text="🇺🇿 O'zbekcha", callback_data="lang_uz"),
+            types.InlineKeyboardButton(text="🇬🇧 English", callback_data="lang_en")
+        ]
+    ])
+    await message.answer("🌐 Выберите язык / Tilingizni tanlang / Choose language:", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("lang_"))
+async def set_language_callback(callback: types.CallbackQuery):
+    lang = callback.data.split("_")[1]
+    user_languages[callback.from_user.id] = lang
+    responses = {
+        "ru": "✅ Язык изменен на Русский!",
+        "uz": "✅ Tilingiz O'zbekchaga o'zgartirildi!",
+        "en": "✅ Language changed to English!"
+    }
+    await callback.message.edit_text(responses.get(lang, "✅ OK"))
+    await callback.answer()
+
+# Команда /stats
+@dp.message(Command("stats"))
+async def stats_cmd(message: types.Message):
+    text = (
+        "📊 **Статистика бота:**\n\n"
+        f"👥 Всего пользователей: `{len(users_list)}`\n"
+        f"🎬 Скачано видео: `{stats_counter['videos']}`\n"
+        f"🎵 Скачано/Извлечено MP3: `{stats_counter['audio']}`\n"
+        f"🔄 Сделано кружочков: `{stats_counter['notes']}`\n"
+        f"🖼 Создано стикеров: `{stats_counter['stickers']}`"
+    )
+    await message.answer(text, parse_mode="Markdown")
+
+# Команда /help
+@dp.message(Command("help"))
+async def help_cmd(message: types.Message):
     await message.answer(
-        "🚀 **Привет! Я твой медиа-помощник.**\n\n"
-        "🎬 **Что я умею:**\n"
-        "1. Отправь ссылку (TikTok, Reels, Shorts) — скачаю без лого!\n"
-        "2. Отправь любое видео — сделаю из него кружочек!\n"
-        "3. Напиши `/say Текст` — я озвучу его в голосовое!"
+        "❓ **Как со мной работать:**\n\n"
+        "• **Скачать видео/музыку:** Отправь ссылку из TikTok, Instagram Reels или YouTube.\n"
+        "• **Сделать стикер:** Просто пришли любую фотографию как обычное изображение.\n"
+        "• **Сделать кружочек:** Пришли видеофайл.\n"
+        "• **Сделать озвучку:** Напиши `/say Привет, как дела?`"
     )
 
+# Выбор формата скачивания при отправке ссылки
 @dp.message(F.text.startswith("http://") | F.text.startswith("https://"))
-async def download_video_handler(message: types.Message):
+async def ask_download_format(message: types.Message):
+    register_user(message.from_user.id)
     url = message.text.strip()
-    status_msg = await message.answer("⏳ Скачиваю видео, подожди немного...")
-    output_path = f"downloads/{message.from_user.id}_video.mp4"
-    ydl_opts = {'format': 'mp4', 'outtmpl': output_path, 'quiet': True}
-    try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]))
-        if os.path.exists(output_path):
-            await message.answer_video(FSInputFile(output_path), caption="✅ Готово! Твое видео без логотипа.")
-            os.remove(output_path)
-            await status_msg.delete()
-        else:
-            await status_msg.edit_text("❌ Не удалось скачать видео по этой ссылке.")
-    except Exception as e:
-        await status_msg.edit_text(f"❌ Ошибка скачивания: {str(e)}")
-
-@dp.message(F.video | F.document)
-async def convert_to_note_handler(message: types.Message):
-    status_msg = await message.answer("🔄 Делаю кружочек из видео...")
-    file_id = message.video.file_id if message.video else message.document.file_id
-    file = await bot.get_file(file_id)
-    input_file = f"downloads/{message.from_user.id}_input.mp4"
-    output_note = f"downloads/{message.from_user.id}_note.mp4"
-    await bot.download_file(file.file_path, input_file)
     
-    ffmpeg_cmd = f'ffmpeg -y -i {input_file} -vf "crop=ih:ih,scale=640:640" -c:v libx264 -crf 26 -preset ultrafast -c:a aac {output_note}'
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [
+            types.InlineKeyboardButton(text="🎬 Видео (MP4)", callback_data="dl_video"),
+            types.InlineKeyboardButton(text="🎵 Аудио (MP3)", callback_data="dl_audio")
+        ]
+    ])
+    await message.answer("🎯 **Что вы хотите скачать по этой ссылке?**", reply_markup=kb, reply_to_message_id=message.message_id)
+
+@dp.callback_query(F.data.in_({"dl_video", "dl_audio"}))
+async def process_download(callback: types.CallbackQuery):
+    url = callback.message.reply_to_message.text.strip()
+    action = callback.data
+    
+    status_msg = await callback.message.edit_text("⏳ Идет скачивание, подождите...")
+    user_id = callback.from_user.id
+    
+    if action == "dl_video":
+        output_path = f"downloads/{user_id}_video.mp4"
+        ydl_opts = {'format': 'mp4', 'outtmpl': output_path, 'quiet': True}
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]))
+            if os.path.exists(output_path):
+                await callback.message.answer_video(FSInputFile(output_path), caption="✅ Ваше видео готово!")
+                stats_counter['videos'] += 1
+                os.remove(output_path)
+                await status_msg.delete()
+            else:
+                await status_msg.edit_text("❌ Ошибка при скачивании видео.")
+        except Exception as e:
+            await status_msg.edit_text(f"❌ Ошибка: {str(e)}")
+            
+    elif action == "dl_audio":
+        output_path = f"downloads/{user_id}_audio.mp3"
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': output_path,
+            'quiet': True,
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        }
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]))
+            
+            # yt-dlp может добавить расширение .mp3
+            if not os.path.exists(output_path) and os.path.exists(output_path + ".mp3"):
+                output_path += ".mp3"
+
+            if os.path.exists(output_path):
+                await callback.message.answer_audio(FSInputFile(output_path), caption="✅ Ваш трек в формате MP3!")
+                stats_counter['audio'] += 1
+                os.remove(output_path)
+                await status_msg.delete()
+            else:
+                await status_msg.edit_text("❌ Ошибка при скачивании аудио.")
+        except Exception as e:
+            await status_msg.edit_text(f"❌ Ошибка: {str(e)}")
+            
+    await callback.answer()
+
+# Превращение картинки в Стикер
+@dp.message(F.photo)
+async def photo_to_sticker_handler(message: types.Message):
+    register_user(message.from_user.id)
+    status_msg = await message.answer("🎨 Превращаю картинку в стикер...")
+    photo = message.photo[-1]
+    file = await bot.get_file(photo.file_id)
+    
+    input_path = f"downloads/{message.from_user.id}_img.jpg"
+    output_sticker = f"downloads/{message.from_user.id}_sticker.webp"
+    
+    await bot.download_file(file.file_path, input_path)
+    
+    ffmpeg_cmd = f'ffmpeg -y -i {input_path} -vf "scale=512:512:force_original_aspect_ratio=decrease" {output_sticker}'
     process = await asyncio.create_subprocess_shell(ffmpeg_cmd)
     await process.communicate()
-
-    if os.path.exists(output_note):
-        await message.answer_video_note(FSInputFile(output_note))
+    
+    if os.path.exists(output_sticker):
+        await message.answer_sticker(FSInputFile(output_sticker))
+        stats_counter['stickers'] += 1
         await status_msg.delete()
-        os.remove(input_file)
-        os.remove(output_note)
+        os.remove(input_path)
+        os.remove(output_sticker)
     else:
-        await status_msg.edit_text("❌ Не удалось сделать кружочек.")
+        await status_msg.edit_text("❌ Не удалось сделать стикер.")
 
+# Превращение видео в кружочек или вызов действий для видео
+@dp.message(F.video | F.document)
+async def media_file_handler(message: types.Message):
+    register_user(message.from_user.id)
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [
+            types.InlineKeyboardButton(text="🔄 Сделать кружочек", callback_data="convert_note"),
+            types.InlineKeyboardButton(text="🎵 Извлечь MP3", callback_data="convert_mp3")
+        ]
+    ])
+    await message.answer("🎬 Что сделать с этим видео?", reply_markup=kb, reply_to_message_id=message.message_id)
+
+@dp.callback_query(F.data.in_({"convert_note", "convert_mp3"}))
+async def process_media_file(callback: types.CallbackQuery):
+    msg = callback.message.reply_to_message
+    file_id = msg.video.file_id if msg.video else msg.document.file_id
+    user_id = callback.from_user.id
+    
+    status_msg = await callback.message.edit_text("⏳ Обрабатываю файл...")
+    file = await bot.get_file(file_id)
+    input_file = f"downloads/{user_id}_input.mp4"
+    await bot.download_file(file.file_path, input_file)
+    
+    if callback.data == "convert_note":
+        output_note = f"downloads/{user_id}_note.mp4"
+        ffmpeg_cmd = f'ffmpeg -y -i {input_file} -vf "crop=ih:ih,scale=640:640" -c:v libx264 -crf 26 -preset ultrafast -c:a aac {output_note}'
+        process = await asyncio.create_subprocess_shell(ffmpeg_cmd)
+        await process.communicate()
+        
+        if os.path.exists(output_note):
+            await callback.message.answer_video_note(FSInputFile(output_note))
+            stats_counter['notes'] += 1
+            await status_msg.delete()
+            os.remove(output_note)
+        else:
+            await status_msg.edit_text("❌ Не удалось сделать кружочек.")
+            
+    elif callback.data == "convert_mp3":
+        output_mp3 = f"downloads/{user_id}_audio.mp3"
+        ffmpeg_cmd = f'ffmpeg -y -i {input_file} -vn -acodec libmp3lame -q:a 2 {output_mp3}'
+        process = await asyncio.create_subprocess_shell(ffmpeg_cmd)
+        await process.communicate()
+        
+        if os.path.exists(output_mp3):
+            await callback.message.answer_audio(FSInputFile(output_mp3), caption="🎵 Аудио из видео")
+            stats_counter['audio'] += 1
+            await status_msg.delete()
+            os.remove(output_mp3)
+        else:
+            await status_msg.edit_text("❌ Не удалось извлечь аудио.")
+
+    if os.path.exists(input_file):
+        os.remove(input_file)
+    await callback.answer()
+
+# Озвучка /say
 @dp.message(F.text.startswith("/say"))
 async def text_to_speech_handler(message: types.Message):
+    register_user(message.from_user.id)
     text = message.text.replace("/say", "").strip()
     if not text:
         return await message.answer("⚠️ Напиши текст после команды, например: `/say Привет как дела`")
     output_audio = f"downloads/{message.from_user.id}_audio.ogg"
-    gTTS(text=text, lang='ru').save(output_audio)
+    
+    lang = user_languages.get(message.from_user.id, "ru")
+    tts_lang = "ru" if lang == "ru" else ("en" if lang == "en" else "ru")
+    
+    gTTS(text=text, lang=tts_lang).save(output_audio)
     await message.answer_voice(FSInputFile(output_audio))
     os.remove(output_audio)
 
 async def main():
+    await set_main_menu(bot)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
