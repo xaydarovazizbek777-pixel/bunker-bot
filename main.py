@@ -11,11 +11,10 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from gtts import gTTS
 import yt_dlp
 import static_ffmpeg
 
-# Подключаем пути к FFmpeg
+# Автоматическая настройка FFmpeg
 static_ffmpeg.add_paths()
 
 TOKEN = os.getenv("BOT_TOKEN", "8765852488:AAErO2_3gbQCR8UG7AncX64p2d3W3z5W0Tg")
@@ -35,7 +34,7 @@ def load_db():
     return {
         "users": [],
         "user_langs": {},
-        "stats": {"music": 0, "tts": 0, "video": 0, "note": 0, "sticker": 0}
+        "stats": {"music": 0, "video": 0, "note": 0, "sticker": 0}
     }
 
 def save_db():
@@ -56,30 +55,30 @@ def get_lang(user_id):
 
 TEXTS = {
     "ru": {
-        "start": "🚀 **Media Save Bot | Медиа-помощник**\n\n✨ **Возможности:**\n1. 📩 **Скачивание** — отправь ссылку (TikTok, Reels, Shorts)\n2. 🔍 **Поиск музыки** — `/music Название`\n3. 🔄 **Видео ↔ Кружочек** — отправь видео или кружок\n4. 🖼 **Фото в стикер** — отправь фото\n5. 🗣 **Озвучка текста** — `/say Текст`\n6. 🌐 **Смена языка** — `/lang`",
+        "start": "🚀 **Media Save Bot**\n\nОтправь мне ссылку на Reels, TikTok или Shorts, либо отправь видео/фото!\n\n📌 Нажми /help для просмотра всех команд.",
+        "help": "ℹ️ **Инструкция по командам:**\n\n📩 **Скачивание:** Отправь ссылку на TikTok, Reels или Shorts ➔ выбери видео или MP3.\n🔍 `/music Название` — Найти и скачать песню.\n🔄 **Видео ➔ Кружок:** Отправь обычное видео.\n🔄 **Кружок ➔ Видео:** Отправь круглое видеосообщение.\n🖼 **Фото ➔ Стикер:** Отправь любое изображение.\n🌐 `/lang` — Сменить язык.\n📊 `/stats` — Статистика (только админ).",
         "lang_select": "🌐 Выберите язык / Tilingizni tanlang:",
-        "lang_set": "✅ Язык изменен на Русский!",
-        "stats": "📊 **Статистика бота:**\n\n👥 Пользователи: {users}\n🔍 Поиск музыки: {music}\n🗣 Озвучка (TTS): {tts}\n🎬 Скачано видео: {video}\n🔄 Кружочки: {note}\n🖼 Стикеры: {sticker}",
-        "no_access": "⛔ Доступ запрещен! Эта команда только для владельца.",
-        "say_prompt": "⚠️ Напишите текст после команды: `/say Привет`",
-        "music_prompt": "⚠️ Напишите название песни: `/music Miyagi`",
+        "lang_set": "✅ Язык успешно изменен на Русский!",
+        "stats": "📊 **Статистика бота:**\n\n👥 Всего пользователей: {users}\n🔍 Скачано музыки: {music}\n🎬 Скачано видео по ссылкам: {video}\n🔄 Сделано кружочков: {note}\n🖼 Превращено в стикеры: {sticker}",
+        "no_access": "⛔ Команда доступна только владельцу бота.",
+        "music_prompt": "⚠️ Укажите название трека: `/music Miyagi`",
         "music_search": "🔎 Ищу и загружаю трек...",
-        "music_err": "❌ Не удалось скачать аудио.",
-        "dl_prompt": "Выберите формат для скачивания:",
-        "dl_start": "⏳ Скачиваю медиа-файл...",
-        "dl_err": "❌ Ошибка скачивания по ссылке."
+        "music_err": "❌ Не удалось скачать трек.",
+        "dl_prompt": "🎬 Выберите формат для скачивания:",
+        "dl_start": "⏳ Скачиваю файл...",
+        "dl_err": "❌ Ошибка скачивания по этой ссылке."
     },
     "uz": {
-        "start": "🚀 **Media Save Bot | Media yordamchi**\n\n✨ **Imkoniyatlar:**\n1. 📩 **Yuklab olish** — TikTok, Reels, Shorts havolasini yuboring\n2. 🔍 **Musiqa qidirish** — `/music Nomi`\n3. 🔄 **Video ↔ Dumaloq video** — video yuboring\n4. 🖼 **Rasm stickerga** — rasm yuboring\n5. 🗣 **Ovoz berish** — `/say Matn`\n6. 🌐 **Tilni o'zgartirish** — `/lang`",
+        "start": "🚀 **Media Save Bot**\n\nMenga Reels, TikTok yoki Shorts havolasini yuboring!\n\n📌 Buyruqlar ro'yxati uchun /help tugmasini bosing.",
+        "help": "ℹ️ **Botdan foydalanish yo'riqnomasi:**\n\n📩 **Yuklab olish:** TikTok, Reels yoki Shorts havolasini yuboring ➔ formatni tanlang.\n🔍 `/music Nomi` — Musiqa qidirish va yuklash.\n🔄 **Video ➔ Dumaloq video:** Oddiy video yuboring.\n🔄 **Dumaloq video ➔ Oddiy video:** Dumaloq video yuboring.\n🖼 **Rasm ➔ Stiker:** Rasm yuboring.\n🌐 `/lang` — Tilni o'zgartirish.\n📊 `/stats` — Bot statistikasi (faqat admin uchun).",
         "lang_select": "🌐 Выберите язык / Tilingizni tanlang:",
         "lang_set": "✅ Tilingiz O'zbekchaga o'zgartirildi!",
-        "stats": "📊 **Bot statistikasi:**\n\n👥 Jami foydalanuvchilar: {users}\n🔍 Musiqa qidiruv: {music}\n🗣 Ovoz berilgan: {tts}\n🎬 Yuklangan videolar: {video}\n🔄 Dumaloq videolar: {note}\n🖼 Stikerlar: {sticker}",
-        "no_access": "⛔ Kirish taqiqlangan! Bu buyruq faqat bot egasi uchun.",
-        "say_prompt": "⚠️ Buyruqdan so'ng matn yozing: `/say Salom`",
-        "music_prompt": "⚠️ Musiqa nomini yozing: `/music Miyagi`",
-        "music_search": "🔎 Qo'shiq qidirilmoqda va yuklanmoqda...",
+        "stats": "📊 **Bot statistikasi:**\n\n👥 Foydalanuvchilar: {users}\n🔍 Musiqa yuklangan: {music}\n🎬 Video yuklangan: {video}\n🔄 Dumaloq videolar: {note}\n🖼 Stikerlar: {sticker}",
+        "no_access": "⛔ Bu buyruq faqat bot egasi uchun.",
+        "music_prompt": "⚠️ Qo'shiq nomini kiriting: `/music Miyagi`",
+        "music_search": "🔎 Qidirilmoqda va yuklanmoqda...",
         "music_err": "❌ Yuklab bo'lmadi.",
-        "dl_prompt": "Yuklab olish formatini tanlang:",
+        "dl_prompt": "🎬 Yuklab olish formatini tanlang:",
         "dl_start": "⏳ Yuklanmoqda...",
         "dl_err": "❌ Ushbu havoladan yuklab bo'lmadi."
     }
@@ -93,6 +92,11 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     register_user(user_id)
     await update.message.reply_text(get_txt(user_id, "start"), parse_mode="Markdown")
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
+    await update.message.reply_text(get_txt(user_id, "help"), parse_mode="Markdown")
 
 async def lang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -122,39 +126,11 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = get_txt(user_id, "stats").format(
         users=len(db["users"]),
         music=s["music"],
-        tts=s["tts"],
         video=s["video"],
         note=s["note"],
         sticker=s["sticker"]
     )
     await update.message.reply_text(text, parse_mode="Markdown")
-
-async def say_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    register_user(user_id)
-    text = " ".join(context.args)
-    if not text:
-        return await update.message.reply_text(get_txt(user_id, "say_prompt"), parse_mode="Markdown")
-    
-    msg = await update.message.reply_text("🗣 Озвучиваю...")
-    file_path = f"tts_{user_id}.mp3"
-    try:
-        def generate_tts():
-            tts = gTTS(text=text, lang='ru')
-            tts.save(file_path)
-
-        await asyncio.to_thread(generate_tts)
-
-        with open(file_path, "rb") as f:
-            await update.message.reply_voice(voice=f)
-        
-        db["stats"]["tts"] += 1
-        save_db()
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        await msg.delete()
-    except Exception as e:
-        await msg.edit_text(f"❌ Ошибка озвучки: {str(e)}")
 
 async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -218,7 +194,7 @@ async def process_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = pending_links.get(user_id)
     
     if not url:
-        return await query.edit_message_text("Ссылка устарела или не найдена.")
+        return await query.edit_message_text("Ссылка устарела. Отправьте её еще раз.")
 
     mode = query.data.split("_")[1]
     await query.edit_message_text(get_txt(user_id, "dl_start"))
@@ -229,7 +205,7 @@ async def process_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': out_file,
             'quiet': True,
-            'socket_timeout': 15
+            'socket_timeout': 20
         }
         def dl_v():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -259,7 +235,7 @@ async def process_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'preferredquality': '192',
             }],
             'quiet': True,
-            'socket_timeout': 15
+            'socket_timeout': 20
         }
         def dl_a():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -281,7 +257,7 @@ async def process_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def video_to_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     register_user(user_id)
-    msg = await update.message.reply_text("⏳ Создаю кружочек...")
+    msg = await update.message.reply_text("⏳ Преобразую в кружочек...")
     
     in_path = f"in_{user_id}.mp4"
     out_path = f"out_{user_id}.mp4"
@@ -302,7 +278,7 @@ async def video_to_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_db()
         os.remove(out_path)
     else:
-        await update.message.reply_text("❌ Ошибка обработки видео.")
+        await update.message.reply_text("❌ Ошибка при создании кружочка.")
 
     if os.path.exists(in_path):
         os.remove(in_path)
@@ -311,7 +287,7 @@ async def video_to_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def note_to_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     register_user(user_id)
-    msg = await update.message.reply_text("⏳ Преобразую в обычное видео...")
+    msg = await update.message.reply_text("⏳ Распаковываю в обычное видео...")
     
     in_path = f"note_in_{user_id}.mp4"
     note_file = await update.message.video_note.get_file()
@@ -344,9 +320,9 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("lang", lang_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
-    app.add_handler(CommandHandler("say", say_cmd))
     app.add_handler(CommandHandler("music", music_cmd))
     
     app.add_handler(CallbackQueryHandler(set_lang, pattern=r"^lang_"))
