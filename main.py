@@ -1,27 +1,26 @@
 import os
 import json
-import asyncio
 import logging
-from aiogram import Bot, Dispatcher, F, types
-from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
-from aiogram.fsm.storage.memory import MemoryStorage
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
 from gtts import gTTS
 import yt_dlp
 import static_ffmpeg
 
-# Подтягиваем FFmpeg
 static_ffmpeg.add_paths()
 
 TOKEN = os.getenv("BOT_TOKEN", "8765852488:AAErO2_3gbQCR8UG7AncX64p2d3W3z5W0Tg")
-
-bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
 logging.basicConfig(level=logging.INFO)
 
 DB_FILE = "database.json"
 
-# === БАЗА ДАННЫХ И СТАТИСТИКА ===
 def load_db():
     if os.path.exists(DB_FILE):
         try:
@@ -51,7 +50,6 @@ def register_user(user_id):
 def get_lang(user_id):
     return db["user_langs"].get(str(user_id), "ru")
 
-# === МУЛЬТИЯЗЫЧНЫЕ ТЕКСТЫ ===
 TEXTS = {
     "ru": {
         "start": "🚀 **Привет! Я твой универсальный медиа-помощник.**\n\n✨ **Мои возможности:**\n1. 📩 **Скачивание по ссылке** — отправь ссылку (TikTok, Reels, Shorts) и выбери Видео или MP3.\n2. 🔍 **Поиск музыки** — напиши `/music Название`\n3. 🔄 **Видео ↔ Кружочек** — отправь видео или кружочек.\n4. 🖼 **Фото в стикер** — отправь фото.\n5. 🗣 **Озвучка текста** — напиши `/say Текст`\n6. 🌐 **Смена языка** — команда `/lang`",
@@ -59,7 +57,7 @@ TEXTS = {
         "lang_set": "✅ Язык успешно изменен на Русский!",
         "stats": "📊 **Статистика бота:**\n\n👥 Всего пользователей: {users}\n🔍 Найдено песен: {music}\n🗣 Озвучено текстов: {tts}\n🎬 Скачано видео: {video}\n🔄 Кружочков сделано: {note}\n🖼 Стикеров сделано: {sticker}",
         "say_prompt": "⚠️ Напишите текст после команды: `/say Привет, как дела?`",
-        "music_prompt": "⚠️ Напишите название песни: `/music Miyagi` или `/music Janob Rasul`",
+        "music_prompt": "⚠️ Напишите название песни: `/music Miyagi`",
         "music_search": "🔎 Ищу песню, подождите...",
         "music_err": "❌ Не удалось найти или скачать эту песню.",
         "dl_prompt": "Что именно скачиваем?",
@@ -72,7 +70,7 @@ TEXTS = {
         "lang_set": "✅ Tilingiz O'zbekchaga o'zgartirildi!",
         "stats": "📊 **Bot statistikasi:**\n\n👥 Jami foydalanuvchilar: {users}\n🔍 Qidirilgan qo'shiqlar: {music}\n🗣 Ovoz berilgan: {tts}\n🎬 Yuklangan videolar: {video}\n🔄 Dumaloq videolar: {note}\n🖼 Stikerlar: {sticker}",
         "say_prompt": "⚠️ Buyruqdan so'ng matn yozing: `/say Salom, qalaysiz?`",
-        "music_prompt": "⚠️ Qo'shiq nomini yozing: `/music Miyagi` yoki `/music Rayhon`",
+        "music_prompt": "⚠️ Qo'shiq nomini yozing: `/music Miyagi`",
         "music_search": "🔎 Qo'shiq qidirilmoqda...",
         "music_err": "❌ Musiqa topilmadi yoki yuklab bo'lmadi.",
         "dl_prompt": "Nimani yuklab olamiz?",
@@ -98,35 +96,34 @@ def get_txt(user_id, key):
     lang = get_lang(user_id)
     return TEXTS[lang].get(key, TEXTS["ru"][key])
 
-# === КОМАНДЫ ===
-@dp.message(CommandStart())
-async def cmd_start(msg: types.Message):
-    register_user(msg.from_user.id)
-    await msg.answer(get_txt(msg.from_user.id, "start"), parse_mode="Markdown")
+async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
+    await update.message.reply_text(get_txt(user_id, "start"), parse_mode="Markdown")
 
-@dp.message(Command("lang"))
-async def cmd_lang(msg: types.Message):
-    register_user(msg.from_user.id)
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru")],
-        [InlineKeyboardButton(text="🇺🇿 O'zbekcha", callback_data="lang_uz")],
-        [InlineKeyboardButton(text="🇬🇧 English", callback_data="lang_en")]
+async def lang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
+        [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz")],
+        [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
     ])
-    await msg.answer(get_txt(msg.from_user.id, "lang_select"), reply_markup=kb)
+    await update.message.reply_text(get_txt(user_id, "lang_select"), reply_markup=kb)
 
-@dp.callback_query(F.data.startswith("lang_"))
-async def set_language(cb: types.CallbackQuery):
-    lang_code = cb.data.split("_")[1]
-    db["user_langs"][str(cb.from_user.id)] = lang_code
+async def set_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    lang_code = query.data.split("_")[1]
+    db["user_langs"][str(query.from_user.id)] = lang_code
     save_db()
-    await cb.message.edit_text(get_txt(cb.from_user.id, "lang_set"))
-    await cb.answer()
+    await query.edit_message_text(get_txt(query.from_user.id, "lang_set"))
 
-@dp.message(Command("stats"))
-async def cmd_stats(msg: types.Message):
-    register_user(msg.from_user.id)
+async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
     s = db["stats"]
-    text = get_txt(msg.from_user.id, "stats").format(
+    text = get_txt(user_id, "stats").format(
         users=len(db["users"]),
         music=s["music"],
         tts=s["tts"],
@@ -134,48 +131,46 @@ async def cmd_stats(msg: types.Message):
         note=s["note"],
         sticker=s["sticker"]
     )
-    await msg.answer(text, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode="Markdown")
 
-# === БЕСПЛАТНАЯ ОЗВУЧКА GOOGLE (gTTS) ===
-@dp.message(Command("say"))
-async def cmd_say(msg: types.Message):
-    register_user(msg.from_user.id)
-    text = msg.text.replace("/say", "").strip()
+async def say_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
+    text = " ".join(context.args)
     if not text:
-        return await msg.answer(get_txt(msg.from_user.id, "say_prompt"), parse_mode="Markdown")
+        return await update.message.reply_text(get_txt(user_id, "say_prompt"), parse_mode="Markdown")
     
-    status_msg = await msg.answer("🗣 Озвучиваю...")
-    user_lang = get_lang(msg.from_user.id)
-    file_path = f"tts_{msg.from_user.id}.mp3"
-
+    msg = await update.message.reply_text("🗣 Озвучиваю...")
+    file_path = f"tts_{user_id}.mp3"
     try:
-        # Генерируем голос локально без всяких ключей API
+        user_lang = get_lang(user_id)
         tts = gTTS(text=text, lang=user_lang if user_lang in ['ru', 'en'] else 'ru')
         tts.save(file_path)
 
-        await msg.answer_voice(voice=FSInputFile(file_path))
+        with open(file_path, "rb") as f:
+            await update.message.reply_voice(voice=f)
+        
         db["stats"]["tts"] += 1
         save_db()
         os.remove(file_path)
-        await status_msg.delete()
+        await msg.delete()
     except Exception as e:
-        await status_msg.edit_text(f"❌ Ошибка озвучки: {str(e)}")
+        await msg.edit_text(f"❌ Ошибка озвучки: {str(e)}")
 
-# === ПОИСК МУЗЫКИ ===
-@dp.message(Command("music"))
-async def cmd_music(msg: types.Message):
-    register_user(msg.from_user.id)
-    query = msg.text.replace("/music", "").strip()
+async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
+    query = " ".join(context.args)
     if not query:
-        return await msg.answer(get_txt(msg.from_user.id, "music_prompt"), parse_mode="Markdown")
+        return await update.message.reply_text(get_txt(user_id, "music_prompt"), parse_mode="Markdown")
 
-    status_msg = await msg.answer(get_txt(msg.from_user.id, "music_search"))
-    out_file = f"music_{msg.from_user.id}.mp3"
+    msg = await update.message.reply_text(get_txt(user_id, "music_search"))
+    out_file = f"music_{user_id}.mp3"
 
     ydl_opts = {
         'format': 'bestaudio/best',
         'default_search': 'ytsearch1:',
-        'outtmpl': f"music_{msg.from_user.id}.%(ext)s",
+        'outtmpl': f"music_{user_id}.%(ext)s",
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -187,42 +182,44 @@ async def cmd_music(msg: types.Message):
     }
 
     try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([query]))
+        ydl = yt_dlp.YoutubeDL(ydl_opts)
+        ydl.download([query])
         if os.path.exists(out_file):
-            await msg.answer_audio(audio=FSInputFile(out_file), title=query)
+            with open(out_file, "rb") as f:
+                await update.message.reply_audio(audio=f, title=query)
             db["stats"]["music"] += 1
             save_db()
             os.remove(out_file)
-            await status_msg.delete()
+            await msg.delete()
         else:
-            await status_msg.edit_text(get_txt(msg.from_user.id, "music_err"))
+            await msg.edit_text(get_txt(user_id, "music_err"))
     except Exception:
-        await status_msg.edit_text(get_txt(msg.from_user.id, "music_err"))
+        await msg.edit_text(get_txt(user_id, "music_err"))
 
-# === СКАЧИВАНИЕ ПО ССЫЛКЕ ===
-@dp.message(F.text.regexp(r'https?://[^\s]+'))
-async def handle_links_prompt(msg: types.Message):
-    register_user(msg.from_user.id)
-    pending_links[msg.from_user.id] = msg.text.strip()
+async def link_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
+    pending_links[user_id] = update.message.text.strip()
     
-    kb = InlineKeyboardMarkup(inline_keyboard=[
+    kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(text="🎬 Видео", callback_data="dl_video"),
-            InlineKeyboardButton(text="🎵 Аудио (MP3)", callback_data="dl_audio")
+            InlineKeyboardButton("🎬 Видео", callback_data="dl_video"),
+            InlineKeyboardButton("🎵 Аудио (MP3)", callback_data="dl_audio")
         ]
     ])
-    await msg.answer(get_txt(msg.from_user.id, "dl_prompt"), reply_markup=kb)
+    await update.message.reply_text(get_txt(user_id, "dl_prompt"), reply_markup=kb)
 
-@dp.callback_query(F.data.startswith("dl_"))
-async def process_download(cb: types.CallbackQuery):
-    user_id = cb.from_user.id
+async def process_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
     url = pending_links.get(user_id)
-    if not url:
-        return await cb.answer("Ссылка не найдена.", show_alert=True)
     
-    mode = cb.data.split("_")[1]
-    await cb.message.edit_text(get_txt(user_id, "dl_start"))
+    if not url:
+        return await query.edit_message_text("Ссылка не найдена.")
+
+    mode = query.data.split("_")[1]
+    await query.edit_message_text(get_txt(user_id, "dl_start"))
 
     if mode == "video":
         out_file = f"video_{user_id}.mp4"
@@ -233,18 +230,19 @@ async def process_download(cb: types.CallbackQuery):
             'socket_timeout': 15
         }
         try:
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]))
+            ydl = yt_dlp.YoutubeDL(ydl_opts)
+            ydl.download([url])
             if os.path.exists(out_file):
-                await cb.message.answer_video(video=FSInputFile(out_file))
+                with open(out_file, "rb") as f:
+                    await update.effective_message.reply_video(video=f)
                 db["stats"]["video"] += 1
                 save_db()
                 os.remove(out_file)
-                await cb.message.delete()
+                await query.delete_message()
             else:
-                await cb.message.edit_text(get_txt(user_id, "dl_err"))
+                await query.edit_message_text(get_txt(user_id, "dl_err"))
         except Exception:
-            await cb.message.edit_text(get_txt(user_id, "dl_err"))
+            await query.edit_message_text(get_txt(user_id, "dl_err"))
 
     elif mode == "audio":
         out_file = f"audio_{user_id}.mp3"
@@ -260,76 +258,97 @@ async def process_download(cb: types.CallbackQuery):
             'socket_timeout': 15
         }
         try:
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]))
+            ydl = yt_dlp.YoutubeDL(ydl_opts)
+            ydl.download([url])
             if os.path.exists(out_file):
-                await cb.message.answer_audio(audio=FSInputFile(out_file))
+                with open(out_file, "rb") as f:
+                    await update.effective_message.reply_audio(audio=f)
                 db["stats"]["music"] += 1
                 save_db()
                 os.remove(out_file)
-                await cb.message.delete()
+                await query.delete_message()
             else:
-                await cb.message.edit_text(get_txt(user_id, "dl_err"))
+                await query.edit_message_text(get_txt(user_id, "dl_err"))
         except Exception:
-            await cb.message.edit_text(get_txt(user_id, "dl_err"))
+            await query.edit_message_text(get_txt(user_id, "dl_err"))
 
-# === ВИДЕО ↔ КРУЖОЧЕК ===
-@dp.message(F.video)
-async def handle_video_to_note(msg: types.Message):
-    register_user(msg.from_user.id)
-    status_msg = await msg.answer("⏳ Создаю кружочек...")
+async def video_to_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
+    msg = await update.message.reply_text("⏳ Создаю кружочек...")
     
-    in_path = f"in_{msg.from_user.id}.mp4"
-    out_path = f"out_{msg.from_user.id}.mp4"
+    in_path = f"in_{user_id}.mp4"
+    out_path = f"out_{user_id}.mp4"
 
-    await bot.download(msg.video, destination=in_path)
+    video_file = await update.message.video.get_file()
+    await video_file.download_to_drive(in_path)
 
     cmd = f'ffmpeg -y -i "{in_path}" -vf "crop=min(iw\\,ih):min(iw\\,ih),scale=480:480:force_original_aspect_ratio=decrease" -c:v libx264 -crf 26 -preset ultrafast -c:a aac -b:a 128k "{out_path}"'
-    
-    proc = await asyncio.create_subprocess_shell(cmd)
-    await proc.communicate()
+    os.system(cmd)
 
     if os.path.exists(out_path):
-        await msg.answer_video_note(video_note=FSInputFile(out_path))
+        with open(out_path, "rb") as f:
+            await update.message.reply_video_note(video_note=f)
         db["stats"]["note"] += 1
         save_db()
         os.remove(out_path)
     else:
-        await msg.answer("❌ Ошибка обработки видео.")
+        await update.message.reply_text("❌ Ошибка обработки видео.")
 
     if os.path.exists(in_path):
         os.remove(in_path)
-    await status_msg.delete()
+    await msg.delete()
 
-@dp.message(F.video_note)
-async def handle_note_to_video(msg: types.Message):
-    register_user(msg.from_user.id)
-    status_msg = await msg.answer("⏳ Преобразую кружочек в видео...")
+async def note_to_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
+    msg = await update.message.reply_text("⏳ Преобразую в видео...")
     
-    in_path = f"note_in_{msg.from_user.id}.mp4"
-    await bot.download(msg.video_note, destination=in_path)
+    in_path = f"note_in_{user_id}.mp4"
+    note_file = await update.message.video_note.get_file()
+    await note_file.download_to_drive(in_path)
 
     if os.path.exists(in_path):
-        await msg.answer_video(video=FSInputFile(in_path))
+        with open(in_path, "rb") as f:
+            await update.message.reply_video(video=f)
         os.remove(in_path)
-        await status_msg.delete()
+        await msg.delete()
     else:
-        await status_msg.edit_text("❌ Ошибка при конвертации.")
+        await msg.edit_text("❌ Ошибка при конвертации.")
 
-# === ФОТО В СТИКЕР ===
-@dp.message(F.photo)
-async def handle_photo_to_sticker(msg: types.Message):
-    register_user(msg.from_user.id)
-    photo = msg.photo[-1]
-    file_path = f"sticker_{msg.from_user.id}.webp"
-    await bot.download(photo, destination=file_path)
-    await msg.answer_sticker(sticker=FSInputFile(file_path))
+async def photo_to_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
+    file_path = f"sticker_{user_id}.webp"
+    
+    photo_file = await update.message.photo[-1].get_file()
+    await photo_file.download_to_drive(file_path)
+
+    with open(file_path, "rb") as f:
+        await update.message.reply_sticker(sticker=f)
+    
     db["stats"]["sticker"] += 1
     save_db()
     os.remove(file_path)
 
-async def main():
-    await dp.start_polling(bot)
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("lang", lang_cmd))
+    app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("say", say_cmd))
+    app.add_handler(CommandHandler("music", music_cmd))
+    
+    app.add_handler(CallbackQueryHandler(set_lang, pattern=r"^lang_"))
+    app.add_handler(CallbackQueryHandler(process_dl, pattern=r"^dl_"))
+    
+    app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'https?://[^\s]+'), link_handler))
+    app.add_handler(MessageHandler(filters.VIDEO, video_to_note))
+    app.add_handler(MessageHandler(filters.VIDEO_NOTE, note_to_video))
+    app.add_handler(MessageHandler(filters.PHOTO, photo_to_sticker))
+
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
