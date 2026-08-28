@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+import re
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, FSInputFile
@@ -9,17 +10,16 @@ import aiohttp
 import yt_dlp
 import static_ffmpeg
 
-# Инициализация ffmpeg
 static_ffmpeg.add_paths()
 
-TOKEN = os.getenv("BOT_TOKEN")
-ELEVEN_KEY = os.getenv("ELEVENLABS_API_KEY")
+# Жестко вшитые ключи
+TOKEN = os.getenv("BOT_TOKEN", "8765852488:AAErO2_3gbQCR8UG7AncX64p2d3W3z5W0Tg")
+ELEVEN_KEY = os.getenv("ELEVENLABS_API_KEY", "sk_053e9cf42e316b2532d4ed3c2049d29622ec80f81d7fe01d")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 logging.basicConfig(level=logging.INFO)
 
-# Хранилище
 users_db = set()
 stats = {
     "music": 0,
@@ -29,38 +29,44 @@ stats = {
     "sticker": 0
 }
 user_langs = {}
+pending_links = {}
 
-# Тексты интерфейса
 TEXTS = {
     "ru": {
-        "start": "👋Привет! Я функциональный медиа-бот.\n\n1. 📥 **Скачивание по ссылке** (TikTok/Reels/Shorts/YouTube) — просто отправь ссылку.\n2. 🎵 **Поиск музыки** — напиши `/music Название`\n3. 🔄 **Видео в кружочек** — отправь видео.\n4. 🖼 **Фото в стикер** — отправь картинку.\n5. 🗣 **ИИ Озвучка текста** — напиши `/say Текст`",
+        "start": "🚀 **Привет! Я твой универсальный медиа-помощник.**\n\n✨ **Мои возможности:**\n1. 📩 **Скачивание по ссылке** — отправь ссылку и скачай Видео или MP3.\n2. 🔍 **Поиск музыки** — напиши `/music Название`\n3. 🔄 **Видео ↔ Кружочек** — отправь видео или кружочек.\n4. 🖼 **Фото в стикер** — отправь картинку.\n5. 🗣 **ИИ Озвучка текста** — напиши `/say Текст`",
         "lang_select": "🌐 Выберите язык / Tilingizni tanlang / Select language:",
         "lang_set": "✅ Язык успешно изменен на Русский!",
         "stats": "📊 **Статистика бота:**\n\n👥 Пользователи: {users}\n🔍 Найдено песен: {music}\n🗣 Озвучено ElevenLabs: {tts}\n🎬 Скачано видео: {video}\n🔄 Кружочки: {note}\n🖼 Стикеры: {sticker}",
-        "say_prompt": "⚠️ Напишите текст после команды, например: `/say Привет, как дела?`",
-        "say_err": "❌ Ошибка генерации голоса. Проверьте API ключ.",
+        "say_prompt": "⚠️ Напишите текст после команды: `/say Привет`",
         "music_prompt": "⚠️ Напишите название песни: `/music Miyagi`",
-        "music_err": "❌ Ошибка при поиске музыки."
+        "music_err": "❌ Ошибка при поиске музыки.",
+        "dl_prompt": "Что скачиваем?",
+        "dl_start": "⏳ Загружаю...",
+        "dl_err": "❌ Не удалось скачать по этой ссылке."
     },
     "uz": {
-        "start": "👋 Salom! Men funksional media botman.\n\n1. 📥 **Havola orqali yuklash** (TikTok/Reels/Shorts/YouTube) — shunchaki havolani yuboring.\n2. 🎵 **Musiqa qidirish** — `/music Nomi` deb yozing\n3. 🔄 **Videoni dumaloq qilish** — video yuboring.\n4. 🖼 **Rasm stickerga** — rasm yuboring.\n5. 🗣 **AI Ovoz berish** — `/say Matn` deb yozing",
+        "start": "🚀 **Salom! Men sizning universal media yordamchingizman.**\n\n✨ **Imkoniyatlarim:**\n1. 📩 **Havola orqali yuklash** — Video yoki MP3 yuklab oling.\n2. 🔍 **Musiqa qidirish** — `/music Nomi` deb yozing.\n3. 🔄 **Video ↔ Dumaloq video** — video yoki dumaloq video yuboring.\n4. 🖼 **Rasm stickerga** — rasm yuboring.\n5. 🗣 **AI Ovoz berish** — `/say Matn` deb yozing.",
         "lang_select": "🌐 Выберите язык / Tilingizni tanlang / Select language:",
         "lang_set": "✅ Tilingiz O'zbekchaga o'zgartirildi!",
         "stats": "📊 **Bot statistikasi:**\n\n👥 Foydalanuvchilar: {users}\n🔍 Topilgan qo'shiqlar: {music}\n🗣 AI Ovozlar: {tts}\n🎬 Yuklangan videolar: {video}\n🔄 Dumaloq videolar: {note}\n🖼 Stikerlar: {sticker}",
         "say_prompt": "⚠️ Buyruqdan so'ng matn yozing: `/say Salom`",
-        "say_err": "❌ Ovoz yaratishda xatolik.",
         "music_prompt": "⚠️ Musiqa nomini yozing: `/music Miyagi`",
-        "music_err": "❌ Musiqa qidirishda xatolik."
+        "music_err": "❌ Musiqa qidirishda xatolik.",
+        "dl_prompt": "Nima yuklab olamiz?",
+        "dl_start": "⏳ Yuklanmoqda...",
+        "dl_err": "❌ Yuklab bo'lmadi."
     },
     "en": {
-        "start": "👋 Hello! I'm a functional media bot.\n\n1. 📥 **Download by link** (TikTok/Reels/Shorts/YouTube) — just send a link.\n2. 🎵 **Music search** — write `/music Name`\n3. 🔄 **Video to Video Note** — send a video.\n4. 🖼 **Photo to Sticker** — send an image.\n5. 🗣 **AI Text-to-Speech** — write `/say Text`",
+        "start": "🚀 **Hello! I am your universal media assistant.**\n\n✨ **Features:**\n1. 📩 **Download by link** — send link to get Video or MP3.\n2. 🔍 **Music search** — type `/music Name`.\n3. 🔄 **Video ↔ Video Note** — send video or video note.\n4. 🖼 **Photo to Sticker** — send an image.\n5. 🗣 **AI Text-to-Speech** — type `/say Text`.",
         "lang_select": "🌐 Выберите язык / Tilingizni tanlang / Select language:",
         "lang_set": "✅ Language changed to English!",
         "stats": "📊 **Bot Statistics:**\n\n👥 Users: {users}\n🔍 Music found: {music}\n🗣 TTS Generated: {tts}\n🎬 Videos downloaded: {video}\n🔄 Video notes: {note}\n🖼 Stickers: {sticker}",
-        "say_prompt": "⚠️ Write text after command, e.g.: `/say Hello`",
-        "say_err": "❌ Voice generation error.",
+        "say_prompt": "⚠️ Write text after command: `/say Hello`",
         "music_prompt": "⚠️ Write song name: `/music Miyagi`",
-        "music_err": "❌ Search error."
+        "music_err": "❌ Search error.",
+        "dl_prompt": "What to download?",
+        "dl_start": "⏳ Downloading...",
+        "dl_err": "❌ Failed to download."
     }
 }
 
@@ -108,10 +114,7 @@ async def cmd_say(msg: types.Message):
     if not text:
         return await msg.answer(get_txt(msg.from_user.id, "say_prompt"), parse_mode="Markdown")
     
-    if not ELEVEN_KEY:
-        return await msg.answer("❌ ELEVENLABS_API_KEY environment variable is missing.")
-
-    voice_id = "21m00Tcm4TlvDq8ikWAM" # Голос Rachel
+    voice_id = "21m00Tcm4TlvDq8ikWAM"
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     headers = {
         "Accept": "audio/mpeg",
@@ -137,7 +140,7 @@ async def cmd_say(msg: types.Message):
                     os.remove(file_path)
                 else:
                     err_body = await resp.text()
-                    await msg.answer(f"❌ ElevenLabs API Error ({resp.status}): {err_body}")
+                    await msg.answer(f"❌ ElevenLabs Error ({resp.status}): {err_body}")
     except Exception as e:
         await msg.answer(f"❌ Error: {str(e)}")
 
@@ -168,11 +171,82 @@ async def cmd_music(msg: types.Message):
         await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([query]))
         await msg.answer_audio(audio=FSInputFile(out_file), title=query)
         stats["music"] += 1
-        os.remove(out_file)
+        if os.path.exists(out_file):
+            os.remove(out_file)
         await status_msg.delete()
     except Exception as e:
         await status_msg.edit_text(get_txt(msg.from_user.id, "music_err"))
 
+# Обработка ссылки с выбором (Видео / Аудио)
+@dp.message(F.text.regexp(r'https?://[^\s]+'))
+async def handle_links_prompt(msg: types.Message):
+    users_db.add(msg.from_user.id)
+    pending_links[msg.from_user.id] = msg.text.strip()
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🎬 Видео", callback_data="dl_video"),
+            InlineKeyboardButton(text="🎵 Аудио (MP3)", callback_data="dl_audio")
+        ]
+    ])
+    await msg.answer(get_txt(msg.from_user.id, "dl_prompt"), reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("dl_"))
+async def process_download(cb: types.CallbackQuery):
+    user_id = cb.from_user.id
+    url = pending_links.get(user_id)
+    if not url:
+        return await cb.answer("Ссылка не найдена.", show_alert=True)
+    
+    mode = cb.data.split("_")[1]
+    await cb.message.edit_text(get_txt(user_id, "dl_start"))
+
+    if mode == "video":
+        out_file = f"video_{user_id}.mp4"
+        ydl_opts = {
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'outtmpl': out_file,
+            'quiet': True
+        }
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]))
+            if os.path.exists(out_file):
+                await cb.message.answer_video(video=FSInputFile(out_file))
+                stats["video"] += 1
+                os.remove(out_file)
+                await cb.message.delete()
+            else:
+                await cb.message.edit_text(get_txt(user_id, "dl_err"))
+        except Exception:
+            await cb.message.edit_text(get_txt(user_id, "dl_err"))
+
+    elif mode == "audio":
+        out_file = f"audio_{user_id}.mp3"
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': f"audio_{user_id}.%(ext)s",
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'quiet': True
+        }
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([url]))
+            if os.path.exists(out_file):
+                await cb.message.answer_audio(audio=FSInputFile(out_file))
+                stats["music"] += 1
+                os.remove(out_file)
+                await cb.message.delete()
+            else:
+                await cb.message.edit_text(get_txt(user_id, "dl_err"))
+        except Exception:
+            await cb.message.edit_text(get_txt(user_id, "dl_err"))
+
+# 1. Обычное видео ➔ Кружочек
 @dp.message(F.video)
 async def handle_video_to_note(msg: types.Message):
     users_db.add(msg.from_user.id)
@@ -183,7 +257,6 @@ async def handle_video_to_note(msg: types.Message):
 
     await bot.download(msg.video, destination=in_path)
 
-    # Исправленный ffmpeg фильтр для четких размеров и правильного формата
     cmd = f'ffmpeg -y -i "{in_path}" -vf "crop=min(iw\\,ih):min(iw\\,ih),scale=480:480:force_original_aspect_ratio=decrease" -c:v libx264 -crf 26 -preset ultrafast -c:a aac -b:a 128k "{out_path}"'
     
     proc = await asyncio.create_subprocess_shell(cmd)
@@ -199,6 +272,22 @@ async def handle_video_to_note(msg: types.Message):
     if os.path.exists(in_path):
         os.remove(in_path)
     await status_msg.delete()
+
+# 2. Кружочек ➔ Обычное видео
+@dp.message(F.video_note)
+async def handle_note_to_video(msg: types.Message):
+    users_db.add(msg.from_user.id)
+    status_msg = await msg.answer("⏳ Преобразую в обычное видео...")
+    
+    in_path = f"note_in_{msg.from_user.id}.mp4"
+    await bot.download(msg.video_note, destination=in_path)
+
+    if os.path.exists(in_path):
+        await msg.answer_video(video=FSInputFile(in_path))
+        os.remove(in_path)
+        await status_msg.delete()
+    else:
+        await status_msg.edit_text("❌ Ошибка при конвертации кружочка.")
 
 @dp.message(F.photo)
 async def handle_photo_to_sticker(msg: types.Message):
