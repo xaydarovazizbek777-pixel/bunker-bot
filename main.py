@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import asyncio
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
@@ -14,6 +15,7 @@ from gtts import gTTS
 import yt_dlp
 import static_ffmpeg
 
+# Подключаем пути к FFmpeg
 static_ffmpeg.add_paths()
 
 TOKEN = os.getenv("BOT_TOKEN", "8765852488:AAErO2_3gbQCR8UG7AncX64p2d3W3z5W0Tg")
@@ -54,52 +56,38 @@ def get_lang(user_id):
 
 TEXTS = {
     "ru": {
-        "start": "🚀 **Привет! Я твой универсальный медиа-помощник.**\n\n✨ **Мои возможности:**\n1. 📩 **Скачивание по ссылке** — отправь ссылку (TikTok, Reels, Shorts) и выбери Видео или MP3.\n2. 🔍 **Поиск музыки** — напиши `/music Название`\n3. 🔄 **Видео ↔ Кружочек** — отправь видео или кружочек.\n4. 🖼 **Фото в стикер** — отправь фото.\n5. 🗣 **Озвучка текста** — напиши `/say Текст`\n6. 🌐 **Смена языка** — команда `/lang`",
-        "lang_select": "🌐 Выберите язык / Tilingizni tanlang / Select language:",
-        "lang_set": "✅ Язык успешно изменен на Русский!",
-        "stats": "📊 **Статистика бота:**\n\n👥 Всего пользователей: {users}\n🔍 Найдено песен: {music}\n🗣 Озвучено текстов: {tts}\n🎬 Скачано видео: {video}\n🔄 Кружочков сделано: {note}\n🖼 Стикеров сделано: {sticker}",
-        "no_access": "⛔ У вас нет доступа к этой команде!",
-        "say_prompt": "⚠️ Напишите текст после команды: `/say Привет, как дела?`",
+        "start": "🚀 **Media Save Bot | Медиа-помощник**\n\n✨ **Возможности:**\n1. 📩 **Скачивание** — отправь ссылку (TikTok, Reels, Shorts)\n2. 🔍 **Поиск музыки** — `/music Название`\n3. 🔄 **Видео ↔ Кружочек** — отправь видео или кружок\n4. 🖼 **Фото в стикер** — отправь фото\n5. 🗣 **Озвучка текста** — `/say Текст`\n6. 🌐 **Смена языка** — `/lang`",
+        "lang_select": "🌐 Выберите язык / Tilingizni tanlang:",
+        "lang_set": "✅ Язык изменен на Русский!",
+        "stats": "📊 **Статистика бота:**\n\n👥 Пользователи: {users}\n🔍 Поиск музыки: {music}\n🗣 Озвучка (TTS): {tts}\n🎬 Скачано видео: {video}\n🔄 Кружочки: {note}\n🖼 Стикеры: {sticker}",
+        "no_access": "⛔ Доступ запрещен! Эта команда только для владельца.",
+        "say_prompt": "⚠️ Напишите текст после команды: `/say Привет`",
         "music_prompt": "⚠️ Напишите название песни: `/music Miyagi`",
-        "music_search": "🔎 Ищу песню, подождите...",
-        "music_err": "❌ Не удалось найти или скачать эту песню.",
-        "dl_prompt": "Что именно скачиваем?",
-        "dl_start": "⏳ Скачиваю файл...",
-        "dl_err": "❌ Ошибка при скачивании по этой ссылке."
+        "music_search": "🔎 Ищу и загружаю трек...",
+        "music_err": "❌ Не удалось скачать аудио.",
+        "dl_prompt": "Выберите формат для скачивания:",
+        "dl_start": "⏳ Скачиваю медиа-файл...",
+        "dl_err": "❌ Ошибка скачивания по ссылке."
     },
     "uz": {
-        "start": "🚀 **Salom! Men sizning universal media yordamchingizman.**\n\n✨ **Imkoniyatlarim:**\n1. 📩 **Havola orqali yuklash** — TikTok, Reels yoki Shorts havolasini yuboring.\n2. 🔍 **Musiqa qidirish** — `/music Qo'shiq nomi` deb yozing.\n3. 🔄 **Video ↔ Dumaloq video** — video yoki dumaloq video yuboring.\n4. 🖼 **Rasm stickerga** — rasm yuboring.\n5. 🗣 **Ovoz berish** — `/say Matn` deb yozing.\n6. 🌐 **Tilni o'zgartirish** — `/lang` buyrug'i",
-        "lang_select": "🌐 Выберите язык / Tilingizni tanlang / Select language:",
+        "start": "🚀 **Media Save Bot | Media yordamchi**\n\n✨ **Imkoniyatlar:**\n1. 📩 **Yuklab olish** — TikTok, Reels, Shorts havolasini yuboring\n2. 🔍 **Musiqa qidirish** — `/music Nomi`\n3. 🔄 **Video ↔ Dumaloq video** — video yuboring\n4. 🖼 **Rasm stickerga** — rasm yuboring\n5. 🗣 **Ovoz berish** — `/say Matn`\n6. 🌐 **Tilni o'zgartirish** — `/lang`",
+        "lang_select": "🌐 Выберите язык / Tilingizni tanlang:",
         "lang_set": "✅ Tilingiz O'zbekchaga o'zgartirildi!",
-        "stats": "📊 **Bot statistikasi:**\n\n👥 Jami foydalanuvchilar: {users}\n🔍 Qidirilgan qo'shiqlar: {music}\n🗣 Ovoz berilgan: {tts}\n🎬 Yuklangan videolar: {video}\n🔄 Dumaloq videolar: {note}\n🖼 Stikerlar: {sticker}",
-        "no_access": "⛔ Sizda ushbu buyruqdan foydalanish huquqi yo'q!",
-        "say_prompt": "⚠️ Buyruqdan so'ng matn yozing: `/say Salom, qalaysiz?`",
-        "music_prompt": "⚠️ Qo'shiq nomini yozing: `/music Miyagi`",
-        "music_search": "🔎 Qo'shiq qidirilmoqda...",
-        "music_err": "❌ Musiqa topilmadi yoki yuklab bo'lmadi.",
-        "dl_prompt": "Nimani yuklab olamiz?",
+        "stats": "📊 **Bot statistikasi:**\n\n👥 Jami foydalanuvchilar: {users}\n🔍 Musiqa qidiruv: {music}\n🗣 Ovoz berilgan: {tts}\n🎬 Yuklangan videolar: {video}\n🔄 Dumaloq videolar: {note}\n🖼 Stikerlar: {sticker}",
+        "no_access": "⛔ Kirish taqiqlangan! Bu buyruq faqat bot egasi uchun.",
+        "say_prompt": "⚠️ Buyruqdan so'ng matn yozing: `/say Salom`",
+        "music_prompt": "⚠️ Musiqa nomini yozing: `/music Miyagi`",
+        "music_search": "🔎 Qo'shiq qidirilmoqda va yuklanmoqda...",
+        "music_err": "❌ Yuklab bo'lmadi.",
+        "dl_prompt": "Yuklab olish formatini tanlang:",
         "dl_start": "⏳ Yuklanmoqda...",
         "dl_err": "❌ Ushbu havoladan yuklab bo'lmadi."
-    },
-    "en": {
-        "start": "🚀 **Hello! I am your universal media assistant.**\n\n✨ **Features:**\n1. 📩 **Download by link** — send a link and choose Video or MP3.\n2. 🔍 **Music Search** — type `/music Song title`\n3. 🔄 **Video ↔ Video Note** — send video or video note.\n4. 🖼 **Photo to Sticker** — send photo.\n5. 🗣 **Text-to-Speech** — type `/say Text`\n6. 🌐 **Change language** — type `/lang`",
-        "lang_select": "🌐 Выберите язык / Tilingizni tanlang / Select language:",
-        "lang_set": "✅ Language changed to English!",
-        "stats": "📊 **Bot Statistics:**\n\n👥 Total Users: {users}\n🔍 Music Found: {music}\n🗣 TTS Generated: {tts}\n🎬 Videos Downloaded: {video}\n🔄 Video Notes: {note}\n🖼 Stickers Created: {sticker}",
-        "no_access": "⛔ Access denied!",
-        "say_prompt": "⚠️ Write text after command: `/say Hello world`",
-        "music_prompt": "⚠️ Write song name: `/music Imagine Dragons`",
-        "music_search": "🔎 Searching for music...",
-        "music_err": "❌ Could not find or download this song.",
-        "dl_prompt": "What do you want to download?",
-        "dl_start": "⏳ Downloading...",
-        "dl_err": "❌ Failed to download from this link."
     }
 }
 
 def get_txt(user_id, key):
     lang = get_lang(user_id)
-    return TEXTS[lang].get(key, TEXTS["ru"][key])
+    return TEXTS.get(lang, TEXTS["ru"]).get(key, TEXTS["ru"][key])
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -111,8 +99,7 @@ async def lang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user_id)
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
-        [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz")],
-        [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
+        [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz")]
     ])
     await update.message.reply_text(get_txt(user_id, "lang_select"), reply_markup=kb)
 
@@ -152,16 +139,19 @@ async def say_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("🗣 Озвучиваю...")
     file_path = f"tts_{user_id}.mp3"
     try:
-        user_lang = get_lang(user_id)
-        tts = gTTS(text=text, lang=user_lang if user_lang in ['ru', 'en'] else 'ru')
-        tts.save(file_path)
+        def generate_tts():
+            tts = gTTS(text=text, lang='ru')
+            tts.save(file_path)
+
+        await asyncio.to_thread(generate_tts)
 
         with open(file_path, "rb") as f:
             await update.message.reply_voice(voice=f)
         
         db["stats"]["tts"] += 1
         save_db()
-        os.remove(file_path)
+        if os.path.exists(file_path):
+            os.remove(file_path)
         await msg.delete()
     except Exception as e:
         await msg.edit_text(f"❌ Ошибка озвучки: {str(e)}")
@@ -190,9 +180,12 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'nocheckcertificate': True
     }
 
+    def run_download():
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([query])
+
     try:
-        ydl = yt_dlp.YoutubeDL(ydl_opts)
-        ydl.download([query])
+        await asyncio.to_thread(run_download)
         if os.path.exists(out_file):
             with open(out_file, "rb") as f:
                 await update.message.reply_audio(audio=f, title=query)
@@ -225,7 +218,7 @@ async def process_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = pending_links.get(user_id)
     
     if not url:
-        return await query.edit_message_text("Ссылка не найдена.")
+        return await query.edit_message_text("Ссылка устарела или не найдена.")
 
     mode = query.data.split("_")[1]
     await query.edit_message_text(get_txt(user_id, "dl_start"))
@@ -238,9 +231,11 @@ async def process_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'quiet': True,
             'socket_timeout': 15
         }
+        def dl_v():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
         try:
-            ydl = yt_dlp.YoutubeDL(ydl_opts)
-            ydl.download([url])
+            await asyncio.to_thread(dl_v)
             if os.path.exists(out_file):
                 with open(out_file, "rb") as f:
                     await update.effective_message.reply_video(video=f)
@@ -266,9 +261,11 @@ async def process_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'quiet': True,
             'socket_timeout': 15
         }
+        def dl_a():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
         try:
-            ydl = yt_dlp.YoutubeDL(ydl_opts)
-            ydl.download([url])
+            await asyncio.to_thread(dl_a)
             if os.path.exists(out_file):
                 with open(out_file, "rb") as f:
                     await update.effective_message.reply_audio(audio=f)
@@ -292,8 +289,11 @@ async def video_to_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video_file = await update.message.video.get_file()
     await video_file.download_to_drive(in_path)
 
-    cmd = f'ffmpeg -y -i "{in_path}" -vf "crop=min(iw\\,ih):min(iw\\,ih),scale=480:480:force_original_aspect_ratio=decrease" -c:v libx264 -crf 26 -preset ultrafast -c:a aac -b:a 128k "{out_path}"'
-    os.system(cmd)
+    def convert():
+        cmd = f'ffmpeg -y -i "{in_path}" -vf "crop=min(iw\\,ih):min(iw\\,ih),scale=480:480:force_original_aspect_ratio=decrease" -c:v libx264 -crf 26 -preset ultrafast -c:a aac -b:a 128k "{out_path}"'
+        os.system(cmd)
+
+    await asyncio.to_thread(convert)
 
     if os.path.exists(out_path):
         with open(out_path, "rb") as f:
@@ -311,7 +311,7 @@ async def video_to_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def note_to_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     register_user(user_id)
-    msg = await update.message.reply_text("⏳ Преобразую в видео...")
+    msg = await update.message.reply_text("⏳ Преобразую в обычное видео...")
     
     in_path = f"note_in_{user_id}.mp4"
     note_file = await update.message.video_note.get_file()
@@ -353,7 +353,7 @@ def main():
     app.add_handler(CallbackQueryHandler(process_dl, pattern=r"^dl_"))
     
     app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'https?://[^\s]+'), link_handler))
-    app.add_handler(MessageHandler(filters.VIDEO, video_to_note))
+    app.add_handler(MessageHandler(filters.VIDEO & ~filters.VIDEO_NOTE, video_to_note))
     app.add_handler(MessageHandler(filters.VIDEO_NOTE, note_to_video))
     app.add_handler(MessageHandler(filters.PHOTO, photo_to_sticker))
 
