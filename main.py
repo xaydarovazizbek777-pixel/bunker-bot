@@ -17,6 +17,8 @@ import static_ffmpeg
 static_ffmpeg.add_paths()
 
 TOKEN = os.getenv("BOT_TOKEN", "8765852488:AAErO2_3gbQCR8UG7AncX64p2d3W3z5W0Tg")
+ADMIN_ID = 5435444673
+
 logging.basicConfig(level=logging.INFO)
 
 DB_FILE = "database.json"
@@ -56,6 +58,7 @@ TEXTS = {
         "lang_select": "🌐 Выберите язык / Tilingizni tanlang / Select language:",
         "lang_set": "✅ Язык успешно изменен на Русский!",
         "stats": "📊 **Статистика бота:**\n\n👥 Всего пользователей: {users}\n🔍 Найдено песен: {music}\n🗣 Озвучено текстов: {tts}\n🎬 Скачано видео: {video}\n🔄 Кружочков сделано: {note}\n🖼 Стикеров сделано: {sticker}",
+        "no_access": "⛔ У вас нет доступа к этой команде!",
         "say_prompt": "⚠️ Напишите текст после команды: `/say Привет, как дела?`",
         "music_prompt": "⚠️ Напишите название песни: `/music Miyagi`",
         "music_search": "🔎 Ищу песню, подождите...",
@@ -69,6 +72,7 @@ TEXTS = {
         "lang_select": "🌐 Выберите язык / Tilingizni tanlang / Select language:",
         "lang_set": "✅ Tilingiz O'zbekchaga o'zgartirildi!",
         "stats": "📊 **Bot statistikasi:**\n\n👥 Jami foydalanuvchilar: {users}\n🔍 Qidirilgan qo'shiqlar: {music}\n🗣 Ovoz berilgan: {tts}\n🎬 Yuklangan videolar: {video}\n🔄 Dumaloq videolar: {note}\n🖼 Stikerlar: {sticker}",
+        "no_access": "⛔ Sizda ushbu buyruqdan foydalanish huquqi yo'q!",
         "say_prompt": "⚠️ Buyruqdan so'ng matn yozing: `/say Salom, qalaysiz?`",
         "music_prompt": "⚠️ Qo'shiq nomini yozing: `/music Miyagi`",
         "music_search": "🔎 Qo'shiq qidirilmoqda...",
@@ -82,6 +86,7 @@ TEXTS = {
         "lang_select": "🌐 Выберите язык / Tilingizni tanlang / Select language:",
         "lang_set": "✅ Language changed to English!",
         "stats": "📊 **Bot Statistics:**\n\n👥 Total Users: {users}\n🔍 Music Found: {music}\n🗣 TTS Generated: {tts}\n🎬 Videos Downloaded: {video}\n🔄 Video Notes: {note}\n🖼 Stickers Created: {sticker}",
+        "no_access": "⛔ Access denied!",
         "say_prompt": "⚠️ Write text after command: `/say Hello world`",
         "music_prompt": "⚠️ Write song name: `/music Imagine Dragons`",
         "music_search": "🔎 Searching for music...",
@@ -122,6 +127,10 @@ async def set_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     register_user(user_id)
+    
+    if user_id != ADMIN_ID:
+        return await update.message.reply_text(get_txt(user_id, "no_access"))
+        
     s = db["stats"]
     text = get_txt(user_id, "stats").format(
         users=len(db["users"]),
