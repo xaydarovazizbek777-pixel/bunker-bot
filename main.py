@@ -75,7 +75,7 @@ TEXTS = {
         "receipt_received": "✅ **Чек получен! Заказ #{order_id} создан.**\nАдминистратор проверит оплату и отправит Stars.",
         "support_text": "💬 По всем вопросам и поддержке обращайтесь к админу: @Shokh_r",
         "order_completed": "✅ **Заказ #{order_id} выполнен!**\n🌟 {stars} Stars отправлены на аккаунт @{target}.\nСпасибо!",
-        "order_rejected": "❌ **Заказ #{order_id} откланен.**\nЕсли есть вопросы, свяжитесь с админом."
+        "order_rejected": "❌ **Заказ #{order_id} отклонен.**\nЕсли есть вопросы, свяжитесь с админом."
     }
 }
 
@@ -305,7 +305,7 @@ def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CallbackQueryHandler(callback_handler))
-    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.DOCUMENT, message_handler))
+    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL, message_handler))
     app.run_polling()
 
 if __name__ == "__main__":
