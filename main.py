@@ -1,338 +1,311 @@
-import os
-import json
 import logging
-import asyncio
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
+    MessageHandler,
     ContextTypes,
     filters,
 )
-import yt_dlp
-import static_ffmpeg
 
-# Автоматическая настройка FFmpeg
-static_ffmpeg.add_paths()
+# ---------------- CONFIG ----------------
+BOT_TOKEN = "8906381412:AAFKCOhY4pALcJ-FggytPaJWx2qlbcJZGQw"
 
-TOKEN = os.getenv("BOT_TOKEN", "8765852488:AAErO2_3gbQCR8UG7AncX64p2d3W3z5W0Tg")
-ADMIN_ID = 5435444673
+ADMIN_IDS = [5435444673, 6176631114]
 
-logging.basicConfig(level=logging.INFO)
+CARD_NUMBER = "5614 6803 7053 0525"
+CARD_HOLDER = "R S"
 
-DB_FILE = "database.json"
+BANNER_URL = "https://i.postimg.cc/85z1XyB1/sotib-olish.jpg"  
 
-def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
-        "users": [],
-        "user_langs": {},
-        "stats": {"music": 0, "video": 0, "note": 0, "sticker": 0}
-    }
-
-def save_db():
-    with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(db, f, ensure_ascii=False, indent=2)
-
-db = load_db()
-pending_links = {}
-
-def register_user(user_id):
-    user_str = str(user_id)
-    if user_str not in db["users"]:
-        db["users"].append(user_str)
-        save_db()
-
-def get_lang(user_id):
-    return db["user_langs"].get(str(user_id), "ru")
+PACKAGES = {
+    "50": {"stars": 50, "price": "14 000 UZS"},
+    "75": {"stars": 75, "price": "18 000 UZS"},
+    "100": {"stars": 100, "price": "25 000 UZS"},
+    "150": {"stars": 150, "price": "38 000 UZS"},
+    "200": {"stars": 200, "price": "50 000 UZS"},
+    "250": {"stars": 250, "price": "62 000 UZS"},
+    "300": {"stars": 300, "price": "75 000 UZS"},
+    "350": {"stars": 350, "price": "88 000 UZS"},
+    "400": {"stars": 400, "price": "100 000 UZS"},
+    "450": {"stars": 450, "price": "114 000 UZS"},
+    "500": {"stars": 500, "price": "125 000 UZS"},
+    "600": {"stars": 600, "price": "150 000 UZS"},
+    "750": {"stars": 750, "price": "188 000 UZS"},
+    "1000": {"stars": 1000, "price": "250 000 UZS"},
+}
 
 TEXTS = {
-    "ru": {
-        "start": "🚀 **Media Save Bot**\n\nОтправь мне ссылку на Reels, TikTok или Shorts, либо отправь видео/фото!\n\n📌 Нажми /help для просмотра всех команд.",
-        "help": "ℹ️ **Инструкция по командам:**\n\n📩 **Скачивание:** Отправь ссылку на TikTok, Reels или Shorts ➔ выбери видео или MP3.\n🔍 `/music Название` — Найти и скачать песню.\n🔄 **Видео ➔ Кружок:** Отправь обычное видео.\n🔄 **Кружок ➔ Видео:** Отправь круглое видеосообщение.\n🖼 **Фото ➔ Стикер:** Отправь любое изображение.\n🌐 `/lang` — Сменить язык.\n📊 `/stats` — Статистика (только админ).",
-        "lang_select": "🌐 Выберите язык / Tilingizni tanlang:",
-        "lang_set": "✅ Язык успешно изменен на Русский!",
-        "stats": "📊 **Статистика бота:**\n\n👥 Всего пользователей: {users}\n🔍 Скачано музыки: {music}\n🎬 Скачано видео по ссылкам: {video}\n🔄 Сделано кружочков: {note}\n🖼 Превращено в стикеры: {sticker}",
-        "no_access": "⛔ Команда доступна только владельцу бота.",
-        "music_prompt": "⚠️ Укажите название трека: `/music Miyagi`",
-        "music_search": "🔎 Ищу и загружаю трек...",
-        "music_err": "❌ Не удалось скачать трек.",
-        "dl_prompt": "🎬 Выберите формат для скачивания:",
-        "dl_start": "⏳ Скачиваю файл...",
-        "dl_err": "❌ Ошибка скачивания по этой ссылке."
-    },
     "uz": {
-        "start": "🚀 **Media Save Bot**\n\nMenga Reels, TikTok yoki Shorts havolasini yuboring!\n\n📌 Buyruqlar ro'yxati uchun /help tugmasini bosing.",
-        "help": "ℹ️ **Botdan foydalanish yo'riqnomasi:**\n\n📩 **Yuklab olish:** TikTok, Reels yoki Shorts havolasini yuboring ➔ formatni tanlang.\n🔍 `/music Nomi` — Musiqa qidirish va yuklash.\n🔄 **Video ➔ Dumaloq video:** Oddiy video yuboring.\n🔄 **Dumaloq video ➔ Oddiy video:** Dumaloq video yuboring.\n🖼 **Rasm ➔ Stiker:** Rasm yuboring.\n🌐 `/lang` — Tilni o'zgartirish.\n📊 `/stats` — Bot statistikasi (faqat admin uchun).",
-        "lang_select": "🌐 Выберите язык / Tilingizni tanlang:",
-        "lang_set": "✅ Tilingiz O'zbekchaga o'zgartirildi!",
-        "stats": "📊 **Bot statistikasi:**\n\n👥 Foydalanuvchilar: {users}\n🔍 Musiqa yuklangan: {music}\n🎬 Video yuklangan: {video}\n🔄 Dumaloq videolar: {note}\n🖼 Stikerlar: {sticker}",
-        "no_access": "⛔ Bu buyruq faqat bot egasi uchun.",
-        "music_prompt": "⚠️ Qo'shiq nomini kiriting: `/music Miyagi`",
-        "music_search": "🔎 Qidirilmoqda va yuklanmoqda...",
-        "music_err": "❌ Yuklab bo'lmadi.",
-        "dl_prompt": "🎬 Yuklab olish formatini tanlang:",
-        "dl_start": "⏳ Yuklanmoqda...",
-        "dl_err": "❌ Ushbu havoladan yuklab bo'lmadi."
+        "select_lang": "🌐 Tilni tanlang / Выберите язык:",
+        "catalog_title": "🌟 **Necha stars sotib olmoqchisiz?**\n\n• **Minimal:** 50 ta\n• **Katta hajmda chegirmalar bor!**\n\n👇 Kerakli paketni tanlang:",
+        "support_btn": "ℹ️ Yordam / Qo'llab-quvvatlash",
+        "lang_btn": "🌐 Tilni o'zgartirish",
+        "enter_username": "Siz tanladingiz: **🌟 {stars} Stars** ({price})\n\n✍️ Stars qabul qiluvchining `@username` nikini yuboring:",
+        "payment_info": (
+            "📌 **To'lov rekvizitlari:**\n\n"
+            "💳 Karta: `{card}`\n"
+            "👤 Egasining ismi: {holder}\n"
+            "💰 To'lov summasi: **{price}**\n\n"
+            "🎯 Qabul qiluvchi: @{target}\n"
+            "🌟 Paket: {stars} Stars\n\n"
+            "📸 **To'lov chekini (skrinshot) ushbu xabarga yuboring.**"
+        ),
+        "receipt_received": "✅ **Chek qabul qilindi! Buyurtma #{order_id} yaratildi.**\nAdministrator to'lovni tekshirib, stars yuboradi.",
+        "support_text": "💬 Savollar va yordam uchun admin bilan bog'laning: @Shokh_r",
+        "order_completed": "✅ **Buyurtma #{order_id} bajarildi!**\n🌟 {stars} Stars @{target} hisobiga o'tkazildi.\nRahmat!",
+        "order_rejected": "❌ **Buyurtma #{order_id} rad etildi.**\nXatolik bo'lsa admin bilan bog'laning."
+    },
+    "ru": {
+        "select_lang": "🌐 Выберите язык / Tilni tanlang:",
+        "catalog_title": "🌟 **Сколько Stars вы хотите купить?**\n\n• **Минимально:** 50 шт\n• **Скидки при оптовой покупке!**\n\n👇 Выберите нужный пакет:",
+        "support_btn": "ℹ️ Помощь / Поддержка",
+        "lang_btn": "🌐 Сменить язык",
+        "enter_username": "Вы выбрали: **🌟 {stars} Stars** ({price})\n\n✍️ Отправьте `@username` получателя Stars:",
+        "payment_info": (
+            "📌 **Реквизиты для оплаты:**\n\n"
+            "💳 Карта: `{card}`\n"
+            "👤 Получатель: {holder}\n"
+            "💰 Сумма к оплате: **{price}**\n\n"
+            "🎯 Получатель: @{target}\n"
+            "🌟 Пакет: {stars} Stars\n\n"
+            "📸 **Отправьте чек (скриншот) оплаты в ответ на это сообщение.**"
+        ),
+        "receipt_received": "✅ **Чек получен! Заказ #{order_id} создан.**\nАдминистратор проверит оплату и отправит Stars.",
+        "support_text": "💬 По всем вопросам и поддержке обращайтесь к админу: @Shokh_r",
+        "order_completed": "✅ **Заказ #{order_id} выполнен!**\n🌟 {stars} Stars отправлены на аккаунт @{target}.\nСпасибо!",
+        "order_rejected": "❌ **Заказ #{order_id} откланен.**\nЕсли есть вопросы, свяжитесь с админом."
     }
 }
 
-def get_txt(user_id, key):
-    lang = get_lang(user_id)
-    return TEXTS.get(lang, TEXTS["ru"]).get(key, TEXTS["ru"][key])
+orders = {}
+order_counter = 1000
+
+logging.basicConfig(level=logging.INFO)
+
+# ---------------- HELPERS ----------------
+
+def get_lang(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return context.user_data.get("lang", "uz")
+
+async def show_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lang = get_lang(context)
+    t = TEXTS[lang]
+
+    keyboard = []
+    keys = list(PACKAGES.keys())
+    for i in range(0, len(keys), 2):
+        row = []
+        item1 = PACKAGES[keys[i]]
+        row.append(InlineKeyboardButton(f"🌟 {item1['stars']} ⭐ => {item1['price']}", callback_data=f"pkg_{keys[i]}"))
+        if i + 1 < len(keys):
+            item2 = PACKAGES[keys[i+1]]
+            row.append(InlineKeyboardButton(f"🌟 {item2['stars']} ⭐ => {item2['price']}", callback_data=f"pkg_{keys[i+1]}"))
+        keyboard.append(row)
+    
+    keyboard.append([InlineKeyboardButton(t["support_btn"], callback_data="support")])
+    keyboard.append([InlineKeyboardButton(t["lang_btn"], callback_data="change_lang")])
+
+    caption = t["catalog_title"]
+
+    if update.callback_query:
+        msg = update.callback_query.message
+        if BANNER_URL and msg.photo:
+            await msg.edit_caption(
+                caption=caption,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+            return
+        await msg.reply_text(caption, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    else:
+        if BANNER_URL:
+            try:
+                await update.message.reply_photo(
+                    photo=BANNER_URL,
+                    caption=caption,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+                return
+            except Exception:
+                pass
+        await update.message.reply_text(caption, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+# ---------------- HANDLERS ----------------
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    register_user(user_id)
-    await update.message.reply_text(get_txt(user_id, "start"), parse_mode="Markdown")
-
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    register_user(user_id)
-    await update.message.reply_text(get_txt(user_id, "help"), parse_mode="Markdown")
-
-async def lang_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    register_user(user_id)
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
-        [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz")]
-    ])
-    await update.message.reply_text(get_txt(user_id, "lang_select"), reply_markup=kb)
-
-async def set_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    lang_code = query.data.split("_")[1]
-    db["user_langs"][str(query.from_user.id)] = lang_code
-    save_db()
-    await query.edit_message_text(get_txt(query.from_user.id, "lang_set"))
-
-async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    register_user(user_id)
-    
-    if user_id != ADMIN_ID:
-        return await update.message.reply_text(get_txt(user_id, "no_access"))
-        
-    s = db["stats"]
-    text = get_txt(user_id, "stats").format(
-        users=len(db["users"]),
-        music=s["music"],
-        video=s["video"],
-        note=s["note"],
-        sticker=s["sticker"]
-    )
-    await update.message.reply_text(text, parse_mode="Markdown")
-
-async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    register_user(user_id)
-    query = " ".join(context.args)
-    if not query:
-        return await update.message.reply_text(get_txt(user_id, "music_prompt"), parse_mode="Markdown")
-
-    msg = await update.message.reply_text(get_txt(user_id, "music_search"))
-    out_file = f"music_{user_id}.mp3"
-
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'default_search': 'ytsearch1:',
-        'outtmpl': f"music_{user_id}.%(ext)s",
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'quiet': True,
-        'socket_timeout': 15,
-        'nocheckcertificate': True
-    }
-
-    def run_download():
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([query])
-
-    try:
-        await asyncio.to_thread(run_download)
-        if os.path.exists(out_file):
-            with open(out_file, "rb") as f:
-                await update.message.reply_audio(audio=f, title=query)
-            db["stats"]["music"] += 1
-            save_db()
-            os.remove(out_file)
-            await msg.delete()
-        else:
-            await msg.edit_text(get_txt(user_id, "music_err"))
-    except Exception:
-        await msg.edit_text(get_txt(user_id, "music_err"))
-
-async def link_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    register_user(user_id)
-    pending_links[user_id] = update.message.text.strip()
-    
-    kb = InlineKeyboardMarkup([
+    keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🎬 Видео", callback_data="dl_video"),
-            InlineKeyboardButton("🎵 Аудио (MP3)", callback_data="dl_audio")
+            InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="set_lang_uz"),
+            InlineKeyboardButton("🇷🇺 Русский", callback_data="set_lang_ru")
         ]
     ])
-    await update.message.reply_text(get_txt(user_id, "dl_prompt"), reply_markup=kb)
+    await update.message.reply_text("🌐 Tilni tanlang / Выберите язык:", reply_markup=keyboard)
 
-async def process_dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
-    url = pending_links.get(user_id)
-    
-    if not url:
-        return await query.edit_message_text("Ссылка устарела. Отправьте её еще раз.")
+    data = query.data
 
-    mode = query.data.split("_")[1]
-    await query.edit_message_text(get_txt(user_id, "dl_start"))
+    if data.startswith("set_lang_"):
+        lang = data.split("_")[2]
+        context.user_data["lang"] = lang
+        await show_catalog(update, context)
 
-    if mode == "video":
-        out_file = f"video_{user_id}.mp4"
-        ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'outtmpl': out_file,
-            'quiet': True,
-            'socket_timeout': 20
+    elif data == "change_lang":
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="set_lang_uz"),
+                InlineKeyboardButton("🇷🇺 Русский", callback_data="set_lang_ru")
+            ]
+        ])
+        await query.message.reply_text("🌐 Tilni tanlang / Выберите язык:", reply_markup=keyboard)
+
+    elif data.startswith("pkg_"):
+        lang = get_lang(context)
+        t = TEXTS[lang]
+        pkg_key = data.split("_")[1]
+        pkg = PACKAGES.get(pkg_key)
+        if not pkg:
+            return
+
+        context.user_data["selected_pkg"] = pkg_key
+        context.user_data["state"] = "WAITING_FOR_USERNAME"
+
+        await query.message.reply_text(
+            t["enter_username"].format(stars=pkg['stars'], price=pkg['price']),
+            parse_mode="Markdown"
+        )
+
+    elif data == "support":
+        lang = get_lang(context)
+        t = TEXTS[lang]
+        await query.message.reply_text(t["support_text"], parse_mode="Markdown")
+
+    elif data.startswith("adm_confirm_"):
+        order_id = int(data.split("_")[2])
+        order = orders.get(order_id)
+        if order:
+            order["status"] = "completed"
+            user_lang = order.get("lang", "uz")
+            t = TEXTS[user_lang]
+            await context.bot.send_message(
+                chat_id=order["user_id"],
+                text=t["order_completed"].format(order_id=order_id, stars=order['stars'], target=order['target_username']),
+                parse_mode="Markdown"
+            )
+            await query.edit_message_caption(
+                caption=query.message.caption + f"\n\n✅ **BAJARILDI / ВЫПОЛНЕНО**"
+            )
+
+    elif data.startswith("adm_reject_"):
+        order_id = int(data.split("_")[2])
+        order = orders.get(order_id)
+        if order:
+            order["status"] = "rejected"
+            user_lang = order.get("lang", "uz")
+            t = TEXTS[user_lang]
+            await context.bot.send_message(
+                chat_id=order["user_id"],
+                text=t["order_rejected"].format(order_id=order_id),
+                parse_mode="Markdown"
+            )
+            await query.edit_message_caption(
+                caption=query.message.caption + f"\n\n❌ **RAD ETILDI / ОТКЛОНЕНО**"
+            )
+
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    state = context.user_data.get("state")
+    lang = get_lang(context)
+    t = TEXTS[lang]
+
+    if state == "WAITING_FOR_USERNAME":
+        target = update.message.text.strip().replace("@", "")
+        pkg_key = context.user_data.get("selected_pkg")
+        pkg = PACKAGES[pkg_key]
+
+        context.user_data["target_username"] = target
+        context.user_data["state"] = "WAITING_FOR_RECEIPT"
+
+        text = t["payment_info"].format(
+            card=CARD_NUMBER,
+            holder=CARD_HOLDER,
+            price=pkg['price'],
+            target=target,
+            stars=pkg['stars']
+        )
+        await update.message.reply_text(text, parse_mode="Markdown")
+
+    elif state == "WAITING_FOR_RECEIPT" and (update.message.photo or update.message.document):
+        global order_counter
+        order_counter += 1
+        order_id = order_counter
+
+        pkg_key = context.user_data.get("selected_pkg")
+        pkg = PACKAGES[pkg_key]
+        target = context.user_data.get("target_username")
+        user = update.effective_user
+
+        orders[order_id] = {
+            "user_id": user.id,
+            "username": user.username,
+            "target_username": target,
+            "stars": pkg["stars"],
+            "price": pkg["price"],
+            "status": "pending",
+            "lang": lang
         }
-        def dl_v():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-        try:
-            await asyncio.to_thread(dl_v)
-            if os.path.exists(out_file):
-                with open(out_file, "rb") as f:
-                    await update.effective_message.reply_video(video=f)
-                db["stats"]["video"] += 1
-                save_db()
-                os.remove(out_file)
-                await query.delete_message()
-            else:
-                await query.edit_message_text(get_txt(user_id, "dl_err"))
-        except Exception:
-            await query.edit_message_text(get_txt(user_id, "dl_err"))
 
-    elif mode == "audio":
-        out_file = f"audio_{user_id}.mp3"
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': f"audio_{user_id}.%(ext)s",
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'quiet': True,
-            'socket_timeout': 20
-        }
-        def dl_a():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-        try:
-            await asyncio.to_thread(dl_a)
-            if os.path.exists(out_file):
-                with open(out_file, "rb") as f:
-                    await update.effective_message.reply_audio(audio=f)
-                db["stats"]["music"] += 1
-                save_db()
-                os.remove(out_file)
-                await query.delete_message()
-            else:
-                await query.edit_message_text(get_txt(user_id, "dl_err"))
-        except Exception:
-            await query.edit_message_text(get_txt(user_id, "dl_err"))
+        context.user_data["state"] = None
 
-async def video_to_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    register_user(user_id)
-    msg = await update.message.reply_text("⏳ Преобразую в кружочек...")
-    
-    in_path = f"in_{user_id}.mp4"
-    out_path = f"out_{user_id}.mp4"
+        await update.message.reply_text(
+            t["receipt_received"].format(order_id=order_id),
+            parse_mode="Markdown"
+        )
 
-    video_file = await update.message.video.get_file()
-    await video_file.download_to_drive(in_path)
+        adm_text = (
+            f"📥 **YANGI BUYURTMA / НОВЫЙ ЗАКАЗ #{order_id}**\n\n"
+            f"👤 Xaridor / Покупатель: [{user.first_name}](tg://user?id={user.id}) (@{user.username or 'yoq'})\n"
+            f"🎯 Kimga / Кому: @{target}\n"
+            f"🌟 Paket / Пакет: **{pkg['stars']} Stars**\n"
+            f"💰 Summa / Сумма: **{pkg['price']}**\n"
+            f"🌐 Til / Язык: {lang.upper()}"
+        )
+        adm_kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Bajarildi / Принять", callback_data=f"adm_confirm_{order_id}"),
+                InlineKeyboardButton("❌ Rad etish / Отклонить", callback_data=f"adm_reject_{order_id}")
+            ]
+        ])
 
-    def convert():
-        cmd = f'ffmpeg -y -i "{in_path}" -vf "crop=min(iw\\,ih):min(iw\\,ih),scale=480:480:force_original_aspect_ratio=decrease" -c:v libx264 -crf 26 -preset ultrafast -c:a aac -b:a 128k "{out_path}"'
-        os.system(cmd)
-
-    await asyncio.to_thread(convert)
-
-    if os.path.exists(out_path):
-        with open(out_path, "rb") as f:
-            await update.message.reply_video_note(video_note=f)
-        db["stats"]["note"] += 1
-        save_db()
-        os.remove(out_path)
-    else:
-        await update.message.reply_text("❌ Ошибка при создании кружочка.")
-
-    if os.path.exists(in_path):
-        os.remove(in_path)
-    await msg.delete()
-
-async def note_to_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    register_user(user_id)
-    msg = await update.message.reply_text("⏳ Распаковываю в обычное видео...")
-    
-    in_path = f"note_in_{user_id}.mp4"
-    note_file = await update.message.video_note.get_file()
-    await note_file.download_to_drive(in_path)
-
-    if os.path.exists(in_path):
-        with open(in_path, "rb") as f:
-            await update.message.reply_video(video=f)
-        os.remove(in_path)
-        await msg.delete()
-    else:
-        await msg.edit_text("❌ Ошибка при конвертации.")
-
-async def photo_to_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    register_user(user_id)
-    file_path = f"sticker_{user_id}.webp"
-    
-    photo_file = await update.message.photo[-1].get_file()
-    await photo_file.download_to_drive(file_path)
-
-    with open(file_path, "rb") as f:
-        await update.message.reply_sticker(sticker=f)
-    
-    db["stats"]["sticker"] += 1
-    save_db()
-    os.remove(file_path)
+        for admin_id in ADMIN_IDS:
+            try:
+                if update.message.photo:
+                    await context.bot.send_photo(
+                        chat_id=admin_id,
+                        photo=update.message.photo[-1].file_id,
+                        caption=adm_text,
+                        reply_markup=adm_kb,
+                        parse_mode="Markdown"
+                    )
+                elif update.message.document:
+                    await context.bot.send_document(
+                        chat_id=admin_id,
+                        document=update.message.document.file_id,
+                        caption=adm_text,
+                        reply_markup=adm_kb,
+                        parse_mode="Markdown"
+                    )
+            except Exception as e:
+                logging.error(f"Error admin notification: {e}")
 
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("lang", lang_cmd))
-    app.add_handler(CommandHandler("stats", stats_cmd))
-    app.add_handler(CommandHandler("music", music_cmd))
-    
-    app.add_handler(CallbackQueryHandler(set_lang, pattern=r"^lang_"))
-    app.add_handler(CallbackQueryHandler(process_dl, pattern=r"^dl_"))
-    
-    app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'https?://[^\s]+'), link_handler))
-    app.add_handler(MessageHandler(filters.VIDEO & ~filters.VIDEO_NOTE, video_to_note))
-    app.add_handler(MessageHandler(filters.VIDEO_NOTE, note_to_video))
-    app.add_handler(MessageHandler(filters.PHOTO, photo_to_sticker))
-
+    app.add_handler(CallbackQueryHandler(callback_handler))
+    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.DOCUMENT, message_handler))
     app.run_polling()
 
 if __name__ == "__main__":
