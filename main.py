@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -38,11 +38,15 @@ PACKAGES = {
 
 TEXTS = {
     "uz": {
-        "select_lang": "🌐 Tilni tanlang / Выберите язык:",
+        "welcome": (
+            "👋 **StarPay Bot-ga xush kelibsiz!**\n\n"
+            "✨ Bu yerda siz Telegram Stars (Yulduzchalar) ni hamyonbop va xavfsiz narxlarda xarid qilishingiz mumkin!\n\n"
+            "🌐 Davom etish uchun tilni tanlang:"
+        ),
         "catalog_title": "🌟 **Necha stars sotib olmoqchisiz?**\n\n• **Minimal:** 50 ta\n• **Katta hajmda chegirmalar bor!**\n\n👇 Kerakli paketni tanlang:",
         "support_btn": "ℹ️ Yordam / Qo'llab-quvvatlash",
         "lang_btn": "🌐 Tilni o'zgartirish",
-        "enter_username": "Siz tanladingiz: **🌟 {stars} Stars** ({price})\n\n✍️ Stars qabul qiluvchining `@username` nikini yuboring:",
+        "enter_username": "Siz tanladingiz: **🌟 {stars} Stars** ({price})\n\n✍️ Stars qabul qiluvchining `@username` nikini yuboring (masalan: `@username`):",
         "payment_info": (
             "📌 **To'lov rekvizitlari:**\n\n"
             "💳 Karta: `{card}`\n"
@@ -58,11 +62,15 @@ TEXTS = {
         "order_rejected": "❌ **Buyurtma #{order_id} rad etildi.**\nXatolik bo'lsa admin bilan bog'laning."
     },
     "ru": {
-        "select_lang": "🌐 Выберите язык / Tilni tanlang:",
+        "welcome": (
+            "👋 **Добро пожаловать в StarPay Bot!**\n\n"
+            "✨ Здесь вы можете приобрести Telegram Stars (Звёзды) по выгодным и безопасным ценам!\n\n"
+            "🌐 Пожалуйста, выберите язык для продолжения:"
+        ),
         "catalog_title": "🌟 **Сколько Stars вы хотите купить?**\n\n• **Минимально:** 50 шт\n• **Скидки при оптовой покупке!**\n\n👇 Выберите нужный пакет:",
         "support_btn": "ℹ️ Помощь / Поддержка",
         "lang_btn": "🌐 Сменить язык",
-        "enter_username": "Вы выбрали: **🌟 {stars} Stars** ({price})\n\n✍️ Отправьте `@username` получателя Stars:",
+        "enter_username": "Вы выбрали: **🌟 {stars} Stars** ({price})\n\n✍️ Отправьте `@username` получателя Stars (например: `@username`):",
         "payment_info": (
             "📌 **Реквизиты для оплаты:**\n\n"
             "💳 Карта: `{card}`\n"
@@ -84,10 +92,14 @@ order_counter = 1000
 
 logging.basicConfig(level=logging.INFO)
 
-# ---------------- HELPERS ----------------
-
 def get_lang(context: ContextTypes.DEFAULT_TYPE) -> str:
     return context.user_data.get("lang", "uz")
+
+async def post_init(application) -> None:
+    await application.bot.set_my_commands([
+        BotCommand("start", "Перезапустить бота / Botni qayta ishga tushirish"),
+        BotCommand("help", "Поддержка / Yordam"),
+    ])
 
 async def show_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(context)
@@ -133,16 +145,26 @@ async def show_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         await update.message.reply_text(caption, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-# ---------------- HANDLERS ----------------
-
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["state"] = None
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="set_lang_uz"),
             InlineKeyboardButton("🇷🇺 Русский", callback_data="set_lang_ru")
         ]
     ])
-    await update.message.reply_text("🌐 Tilni tanlang / Выберите язык:", reply_markup=keyboard)
+    text = (
+        "👋 **StarPay Bot-ga xush kelibsiz! / Добро пожаловать в StarPay Bot!**\n\n"
+        "✨ Bu yerda siz Telegram Stars xarid qilishingiz mumkin.\n"
+        "✨ Здесь вы можете приобрести Telegram Stars.\n\n"
+        "🌐 **Tilni tanlang / Выберите язык:**"
+    )
+    await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lang = get_lang(context)
+    t = TEXTS[lang]
+    await update.message.reply_text(t["support_text"], parse_mode="Markdown")
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -221,10 +243,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(context)
     t = TEXTS[lang]
 
-    if state == "WAITING_FOR_USERNAME":
+    if state == "WAITING_FOR_USERNAME" and update.message.text:
         target = update.message.text.strip().replace("@", "")
         pkg_key = context.user_data.get("selected_pkg")
-        pkg = PACKAGES[pkg_key]
+        pkg = PACKAGES.get(pkg_key)
+
+        if not pkg:
+            await update.message.reply_text("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring / Произошла ошибка. Попробуйте снова.")
+            context.user_data["state"] = None
+            return
 
         context.user_data["target_username"] = target
         context.user_data["state"] = "WAITING_FOR_RECEIPT"
@@ -302,8 +329,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logging.error(f"Error admin notification: {e}")
 
 def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL, message_handler))
     app.run_polling()
